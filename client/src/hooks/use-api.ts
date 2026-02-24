@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import type { 
   CategoryWithThreads, ThreadWithPosts, CreateThreadRequest, 
-  CreatePostRequest, SafeUser, UpdateProfileRequest, AdminUpdateUserRequest 
+  CreatePostRequest, SafeUser, UpdateProfileRequest 
 } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
@@ -26,7 +26,6 @@ export function useCategory(id: number) {
     queryFn: async () => {
       const url = buildUrl(api.categories.get.path, { id });
       const res = await fetch(url);
-      if (res.status === 404) throw new Error("Category not found");
       if (!res.ok) throw new Error("Failed to fetch category");
       return res.json();
     },
@@ -43,7 +42,6 @@ export function useThread(id: number) {
     queryFn: async () => {
       const url = buildUrl(api.threads.get.path, { id });
       const res = await fetch(url);
-      if (res.status === 404) throw new Error("Thread not found");
       if (!res.ok) throw new Error("Failed to fetch thread");
       return res.json();
     },
@@ -57,7 +55,7 @@ export function useCreateThread() {
   return useMutation({
     mutationFn: async (data: CreateThreadRequest) => {
       const res = await fetch(api.threads.create.path, {
-        method: api.threads.create.method,
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
         credentials: "include",
@@ -77,57 +75,16 @@ export function useCreateThread() {
 }
 
 // ====================
-// POSTS
-// ====================
-export function useCreatePost() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  return useMutation({
-    mutationFn: async (data: CreatePostRequest) => {
-      const res = await fetch(api.posts.create.path, {
-        method: api.posts.create.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Failed to submit post");
-      }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: [api.threads.get.path, data.threadId] });
-    },
-    onError: (err: Error) => toast({ title: "ERROR", description: err.message, variant: "destructive" }),
-  });
-}
-
-// ====================
-// USERS & ADMIN (ОСНОВНОЙ БЛОК)
+// USERS & ADMIN
 // ====================
 export function useUsersList() {
   return useQuery<SafeUser[]>({
-    queryKey: [api.users.list.path],
+    queryKey: ["/api/users"],
     queryFn: async () => {
-      // Логируем попытку запроса
-      console.log("DEBUG: Requesting users list from", api.users.list.path);
-      
-      const res = await fetch(api.users.list.path, { credentials: "include" });
-      
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ message: "Unknown error" }));
-        console.error("DEBUG: Users fetch failed", res.status, errData);
-        throw new Error(errData.message || "Failed to fetch users");
-      }
-      
-      const data = await res.json();
-      // Логируем результат
-      console.log("DEBUG: Users received from server:", data);
-      return data;
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch users");
+      return res.json();
     },
-    // Рефетчим данные при каждом входе в админку
-    refetchOnMount: "always",
   });
 }
 
@@ -135,34 +92,20 @@ export function useAdminUpdateUser() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: AdminUpdateUserRequest }) => {
-      // Путь должен вести на /api/users/:id/admin
-      const url = buildUrl("/api/users/:id/admin", { id });
-      
-      console.log("DEBUG: Admin updating user", id, "with data:", data);
-
-      const res = await fetch(url, {
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/users/${id}/admin`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
         credentials: "include",
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "Action failed" }));
-        throw new Error(err.message || "Admin action failed");
-      }
+      if (!res.ok) throw new Error("Admin action failed");
       return res.json();
     },
     onSuccess: () => {
-      // Сбрасываем кэш, чтобы список обновился мгновенно
-      queryClient.invalidateQueries({ queryKey: [api.users.list.path] });
-      queryClient.invalidateQueries({ queryKey: [api.stats.get.path] });
-      toast({ title: "SUCCESS", description: "User status updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "SUCCESS", description: "User updated." });
     },
-    onError: (err: Error) => {
-      toast({ title: "ACTION FAILED", description: err.message, variant: "destructive" });
-    }
   });
 }
 
@@ -179,9 +122,9 @@ export function useStats() {
 
 export function useProfile(id: number) {
   return useQuery<SafeUser>({
-    queryKey: [api.users.profile.path, id],
+    queryKey: ["/api/users/profile", id],
     queryFn: async () => {
-      const url = buildUrl(api.users.profile.path, { id });
+      const url = buildUrl("/api/users/:id", { id });
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch user");
       return res.json();
