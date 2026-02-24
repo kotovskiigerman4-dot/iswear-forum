@@ -13,7 +13,6 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["ADMIN", "MODERATOR", "OLDGEN", "MEMBER"] }).default("MEMBER").notNull(),
   status: text("status", { enum: ["PENDING", "APPROVED", "REJECTED"] }).default("PENDING").notNull(),
-  // Обязательное поле для базы данных
   applicationReason: text("application_reason").notNull(), 
   avatarUrl: text("avatar_url"),
   bannerUrl: text("banner_url"),
@@ -45,6 +44,7 @@ export const posts = pgTable("posts", {
   threadId: integer("thread_id").notNull().references(() => threads.id, { onDelete: "cascade" }),
   authorId: integer("author_id").notNull().references(() => users.id),
   content: text("content").notNull(),
+  fileUrl: text("file_url"), // <--- НОВАЯ КОЛОНКА ДЛЯ PNG/TXT
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
 });
@@ -85,7 +85,6 @@ export const postsRelations = relations(posts, ({ one }) => ({
 
 // === BASE SCHEMAS ===
 
-// Схема для внутреннего использования Drizzle
 export const insertUserSchema = createInsertSchema(users).omit({ 
   id: true, 
   createdAt: true, 
@@ -131,15 +130,18 @@ export const registerSchema = z.object({
 export type LoginRequest = z.infer<typeof loginSchema>;
 export type RegisterRequest = z.infer<typeof registerSchema>;
 
+// Обновленные запросы для поддержки файлов
 export type CreateThreadRequest = {
   title: string;
   content: string;
   categoryId: number;
+  fileUrl?: string; // <--- Позволяем передавать файл при создании темы
 };
 
 export type CreatePostRequest = {
   content: string;
   threadId: number;
+  fileUrl?: string; // <--- Позволяем передавать файл в ответ
 };
 
 export type UpdateProfileRequest = {
