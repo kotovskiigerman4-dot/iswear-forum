@@ -15,7 +15,7 @@ export interface IStorage {
   listUsers(): Promise<SafeUser[]>;
   getUserCount(): Promise<number>;
   getCategories(): Promise<CategoryWithThreads[]>;
-  getCategory(id: number): Promise<CategoryWithThreads | undefined>; // Исправлен тип
+  getCategory(id: number): Promise<CategoryWithThreads | undefined>;
   getThread(id: number): Promise<ThreadWithPosts | undefined>;
   createThread(thread: typeof threads.$inferInsert): Promise<Thread>;
   deleteThread(id: number): Promise<void>;
@@ -27,18 +27,27 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    // Чистим ID на всякий случай
+    const cleanId = Math.floor(Number(id));
+    if (isNaN(cleanId)) return undefined;
+
+    try {
+      const [user] = await db.select().from(users).where(eq(users.id, cleanId));
+      return user || undefined;
+    } catch (e) {
+      console.error(`[STORAGE] Error fetching user ${cleanId}:`, e);
+      return undefined;
+    }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
+    return user || undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
-    return user;
+    return user || undefined;
   }
 
   async createUser(insertUser: typeof users.$inferInsert): Promise<User> {
@@ -47,8 +56,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User> {
-    const [user] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
-    if (!user) throw new Error("User not found");
+    const [user] = await db.update(users)
+      .set({ ...updates })
+      .where(eq(users.id, id))
+      .returning();
+    if (!user) throw new Error("User not found for update");
     return user;
   }
 
@@ -65,7 +77,6 @@ export class DatabaseStorage implements IStorage {
     return all.length;
   }
 
-  // Вспомогательная функция для обогащения тем (чтобы не дублировать код)
   private async enrichThreads(catThreads: Thread[]): Promise<any[]> {
     return await Promise.all(catThreads.map(async t => {
       const [author] = await db.select().from(users).where(eq(users.id, t.authorId));
@@ -99,7 +110,6 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  // ИСПРАВЛЕННЫЙ МЕТОД: Теперь возвращает категорию С ТЕМАМИ
   async getCategory(id: number): Promise<CategoryWithThreads | undefined> {
     const [cat] = await db.select().from(categories).where(eq(categories.id, id));
     if (!cat) return undefined;
@@ -109,11 +119,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(threads.createdAt));
 
     const enrichedThreads = await this.enrichThreads(catThreads);
-
-    return {
-      ...cat,
-      threads: enrichedThreads
-    };
+    return { ...cat, threads: enrichedThreads };
   }
 
   async getThread(id: number): Promise<ThreadWithPosts | undefined> {
