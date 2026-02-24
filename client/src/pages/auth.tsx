@@ -73,7 +73,7 @@ export default function Auth() {
                   value={applicationReason} 
                   onChange={e => setApplicationReason(e.target.value)} 
                   required 
-                  placeholder="Зачем вам доступ?"
+                  placeholder="why are you asking for access. Type extended response."
                   className="mt-1 min-h-[80px]"
                 />
               </div>
@@ -87,7 +87,7 @@ export default function Auth() {
 
           {mode === "register" && (
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase">ICQ (OPTIONAL)</label>
+              <label className="text-[10px] text-muted-foreground uppercase">ICQ or JABBER(OPTIONAL)</label>
               <Input value={icq} onChange={e => setIcq(e.target.value)} className="mt-1" />
             </div>
           )}
