@@ -3,6 +3,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 
+// Вспомогательная функция для обработки ошибок fetch
+async function handleResponse(res: Response) {
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.message || `HTTP_ERROR_${res.status}`);
+  }
+  return res.json();
+}
+
 // ====================
 // CATEGORIES
 // ====================
@@ -11,8 +20,7 @@ export function useCategories() {
     queryKey: [api.categories.list.path],
     queryFn: async () => {
       const res = await fetch(api.categories.list.path);
-      if (!res.ok) throw new Error("Failed to fetch categories");
-      return res.json();
+      return handleResponse(res);
     },
   });
 }
@@ -23,10 +31,9 @@ export function useCategory(id: number) {
     queryFn: async () => {
       const url = buildUrl(api.categories.get.path, { id });
       const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch category");
-      return res.json();
+      return handleResponse(res);
     },
-    enabled: !!id,
+    enabled: !!id && !isNaN(id),
   });
 }
 
@@ -39,10 +46,9 @@ export function useThread(id: number) {
     queryFn: async () => {
       const url = buildUrl(api.threads.get.path, { id });
       const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch thread");
-      return res.json();
+      return handleResponse(res);
     },
-    enabled: !!id,
+    enabled: !!id && !isNaN(id),
   });
 }
 
@@ -57,7 +63,7 @@ export function useCreateThread() {
         body: JSON.stringify(data),
         credentials: "include",
       });
-      return res.json();
+      return handleResponse(res);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [api.categories.get.path, data.categoryId] });
@@ -72,7 +78,8 @@ export function useDeleteThread() {
   return useMutation({
     mutationFn: async ({ id }) => {
       const url = buildUrl(api.threads.delete.path, { id });
-      await fetch(url, { method: "DELETE", credentials: "include" });
+      const res = await fetch(url, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Purge failed");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.categories.list.path] });
@@ -94,7 +101,7 @@ export function useCreatePost() {
         body: JSON.stringify(data),
         credentials: "include",
       });
-      return res.json();
+      return handleResponse(res);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [api.threads.get.path, data.threadId] });
@@ -108,7 +115,8 @@ export function useDeletePost() {
   return useMutation({
     mutationFn: async ({ id }) => {
       const url = buildUrl(api.posts.delete.path, { id });
-      await fetch(url, { method: "DELETE", credentials: "include" });
+      const res = await fetch(url, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Erase failed");
     },
     onSuccess: () => {
       toast({ title: "DELETED", description: "Post erased." });
@@ -124,8 +132,7 @@ export function useUsersList() {
     queryKey: ["/api/users"],
     queryFn: async () => {
       const res = await fetch("/api/users", { credentials: "include" });
-      if (!res.ok) throw new Error("Unauthorized");
-      return res.json();
+      return handleResponse(res);
     },
   });
 }
@@ -141,7 +148,7 @@ export function useAdminUpdateUser() {
         body: JSON.stringify(data),
         credentials: "include",
       });
-      return res.json();
+      return handleResponse(res);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
@@ -155,20 +162,28 @@ export function useStats() {
     queryKey: [api.stats.get.path],
     queryFn: async () => {
       const res = await fetch(api.stats.get.path);
-      return res.json();
+      return handleResponse(res);
     },
   });
 }
 
+// ====================
+// PROFILE (FIXED)
+// ====================
 export function useProfile(id: number) {
   return useQuery({
-    queryKey: ["/api/users/profile", id],
+    // Используем уникальный ключ, чтобы данные не перемешивались
+    queryKey: ["/api/users/profile", id], 
     queryFn: async () => {
       const url = buildUrl("/api/users/:id", { id });
       const res = await fetch(url);
-      return res.json();
+      
+      // Если юзер не найден (404), handleResponse выбросит Error, 
+      // и в компоненте Profile сработает экран ошибки.
+      return handleResponse(res);
     },
-    enabled: !!id,
+    enabled: !!id && !isNaN(id),
+    retry: 1, // Не мучаем сервер, если юзера нет
   });
 }
 
@@ -184,10 +199,11 @@ export function useUpdateProfile() {
         body: JSON.stringify(data),
         credentials: "include",
       });
-      return res.json();
+      return handleResponse(res);
     },
-    onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users/profile", id] });
+    onSuccess: (updatedUser) => {
+      // Обновляем кэш конкретного профиля
+      queryClient.invalidateQueries({ queryKey: ["/api/users/profile", updatedUser.id] });
       toast({ title: "UPDATED", description: "Profile saved." });
     }
   });
