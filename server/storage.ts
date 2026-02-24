@@ -2,13 +2,11 @@ import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 import {
   users, categories, threads, posts,
-  type User, type InsertUser, type Category, type Thread, type Post,
+  type User, type Category, type Thread, type Post,
   type CategoryWithThreads, type ThreadWithPosts, type SafeUser,
-  type CreateThreadRequest, type CreatePostRequest, type UpdateProfileRequest
 } from "@shared/schema";
 
 export interface IStorage {
-  // Users
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -16,22 +14,14 @@ export interface IStorage {
   updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User>;
   listUsers(): Promise<SafeUser[]>;
   getUserCount(): Promise<number>;
-
-  // Categories
   getCategories(): Promise<CategoryWithThreads[]>;
   getCategory(id: number): Promise<Category | undefined>;
-
-  // Threads
   getThread(id: number): Promise<ThreadWithPosts | undefined>;
   createThread(thread: typeof threads.$inferInsert): Promise<Thread>;
   deleteThread(id: number): Promise<void>;
   getThreadCount(): Promise<number>;
-
-  // Posts
   createPost(post: typeof posts.$inferInsert): Promise<Post>;
   deletePost(id: number): Promise<void>;
-  
-  // Seed
   seedCategories(): Promise<void>;
 }
 
@@ -58,15 +48,13 @@ export class DatabaseStorage implements IStorage {
 
   async updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User> {
     const [user] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+    if (!user) throw new Error("User not found");
     return user;
   }
 
   async listUsers(): Promise<SafeUser[]> {
     const allUsers = await db.select().from(users);
-    return allUsers.map(u => {
-      const { passwordHash, ...safe } = u;
-      return safe;
-    });
+    return allUsers.map(({ passwordHash, ...safe }) => safe as SafeUser);
   }
 
   async getUserCount(): Promise<number> {
@@ -76,27 +64,31 @@ export class DatabaseStorage implements IStorage {
 
   async getCategories(): Promise<CategoryWithThreads[]> {
     const allCategories = await db.select().from(categories).orderBy(categories.position);
-    
-    // We will just fetch top threads for each category manually for simplicity
     const result: CategoryWithThreads[] = [];
+
     for (const cat of allCategories) {
-      const catThreads = await db.select().from(threads).where(eq(threads.categoryId, cat.id)).orderBy(desc(threads.createdAt)).limit(5);
-      
+      const catThreads = await db.select().from(threads)
+        .where(eq(threads.categoryId, cat.id))
+        .orderBy(desc(threads.createdAt))
+        .limit(5);
+
       const enrichedThreads = await Promise.all(catThreads.map(async t => {
         const [author] = await db.select().from(users).where(eq(users.id, t.authorId));
         const threadPosts = await db.select({ id: posts.id }).from(posts).where(eq(posts.threadId, t.id));
-        const { passwordHash, ...safeAuthor } = author;
+        
+        // Защита: если автор удален, создаем объект-заглушку
+        const safeAuthor = author 
+          ? (({ passwordHash, ...s }) => s)(author) 
+          : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
+
         return {
           ...t,
-          author: safeAuthor,
+          author: safeAuthor as SafeUser,
           replyCount: Math.max(0, threadPosts.length - 1)
         };
       }));
-      
-      result.push({
-        ...cat,
-        threads: enrichedThreads
-      });
+
+      result.push({ ...cat, threads: enrichedThreads });
     }
     return result;
   }
@@ -112,26 +104,26 @@ export class DatabaseStorage implements IStorage {
 
     const [author] = await db.select().from(users).where(eq(users.id, thread.authorId));
     const [category] = await db.select().from(categories).where(eq(categories.id, thread.categoryId));
-    
     const threadPosts = await db.select().from(posts).where(eq(posts.threadId, id)).orderBy(posts.createdAt);
-    const threadPostsCount = await db.select({ id: posts.id }).from(posts).where(eq(posts.threadId, id));
 
     const enrichedPosts = await Promise.all(threadPosts.map(async p => {
       const [pAuthor] = await db.select().from(users).where(eq(users.id, p.authorId));
-      const { passwordHash, ...safeAuthor } = pAuthor;
-      return {
-        ...p,
-        author: safeAuthor
-      };
+      const safeAuthor = pAuthor 
+        ? (({ passwordHash, ...s }) => s)(pAuthor) 
+        : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
+      
+      return { ...p, author: safeAuthor as SafeUser };
     }));
 
-    const { passwordHash, ...safeAuthor } = author;
+    const safeAuthor = author 
+      ? (({ passwordHash, ...s }) => s)(author) 
+      : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
 
     return {
       ...thread,
-      author: safeAuthor,
+      author: safeAuthor as SafeUser,
       category,
-      replyCount: Math.max(0, threadPostsCount.length - 1),
+      replyCount: Math.max(0, threadPosts.length - 1),
       posts: enrichedPosts
     };
   }
