@@ -76,22 +76,6 @@ export function useCreateThread() {
   });
 }
 
-export function useDeleteThread() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  return useMutation({
-    mutationFn: async ({ id, categoryId }: { id: number; categoryId: number }) => {
-      const url = buildUrl(api.threads.delete.path, { id });
-      const res = await fetch(url, { method: api.threads.delete.method, credentials: "include" });
-      if (!res.ok) throw new Error("Failed to delete thread");
-    },
-    onSuccess: (_, { categoryId }) => {
-      queryClient.invalidateQueries({ queryKey: [api.categories.get.path, categoryId] });
-      toast({ title: "DELETED", description: "Thread purged from database." });
-    }
-  });
-}
-
 // ====================
 // POSTS
 // ====================
@@ -119,69 +103,31 @@ export function useCreatePost() {
   });
 }
 
-export function useDeletePost() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  return useMutation({
-    mutationFn: async ({ id, threadId }: { id: number; threadId: number }) => {
-      const url = buildUrl(api.posts.delete.path, { id });
-      const res = await fetch(url, { method: api.posts.delete.method, credentials: "include" });
-      if (!res.ok) throw new Error("Failed to delete post");
-    },
-    onSuccess: (_, { threadId }) => {
-      queryClient.invalidateQueries({ queryKey: [api.threads.get.path, threadId] });
-      toast({ title: "DELETED", description: "Post erased." });
-    }
-  });
-}
-
 // ====================
-// USERS & ADMIN
+// USERS & ADMIN (ОСНОВНОЙ БЛОК)
 // ====================
-export function useProfile(id: number) {
-  return useQuery<SafeUser>({
-    queryKey: [api.users.profile.path, id],
-    queryFn: async () => {
-      const url = buildUrl(api.users.profile.path, { id });
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch user");
-      return res.json();
-    },
-    enabled: !!id,
-  });
-}
-
-export function useUpdateProfile() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  return useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: UpdateProfileRequest }) => {
-      const url = buildUrl(api.users.update.path, { id });
-      const res = await fetch(url, {
-        method: api.users.update.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Update failed");
-      return res.json();
-    },
-    onSuccess: (data, { id }) => {
-      queryClient.invalidateQueries({ queryKey: [api.users.profile.path, id] });
-      queryClient.invalidateQueries({ queryKey: [api.auth.me.path] });
-      toast({ title: "UPDATED", description: "Profile parameters saved." });
-    }
-  });
-}
-
 export function useUsersList() {
   return useQuery<SafeUser[]>({
     queryKey: [api.users.list.path],
     queryFn: async () => {
+      // Логируем попытку запроса
+      console.log("DEBUG: Requesting users list from", api.users.list.path);
+      
       const res = await fetch(api.users.list.path, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch users");
-      return res.json();
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ message: "Unknown error" }));
+        console.error("DEBUG: Users fetch failed", res.status, errData);
+        throw new Error(errData.message || "Failed to fetch users");
+      }
+      
+      const data = await res.json();
+      // Логируем результат
+      console.log("DEBUG: Users received from server:", data);
+      return data;
     },
+    // Рефетчим данные при каждом входе в админку
+    refetchOnMount: "always",
   });
 }
 
@@ -190,19 +136,32 @@ export function useAdminUpdateUser() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: AdminUpdateUserRequest }) => {
-      const url = buildUrl(api.users.adminUpdate.path, { id });
+      // Путь должен вести на /api/users/:id/admin
+      const url = buildUrl("/api/users/:id/admin", { id });
+      
+      console.log("DEBUG: Admin updating user", id, "with data:", data);
+
       const res = await fetch(url, {
-        method: api.users.adminUpdate.method,
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Admin action failed");
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Action failed" }));
+        throw new Error(err.message || "Admin action failed");
+      }
       return res.json();
     },
     onSuccess: () => {
+      // Сбрасываем кэш, чтобы список обновился мгновенно
       queryClient.invalidateQueries({ queryKey: [api.users.list.path] });
-      toast({ title: "OVERRIDE ACCEPTED", description: "User credentials modified." });
+      queryClient.invalidateQueries({ queryKey: [api.stats.get.path] });
+      toast({ title: "SUCCESS", description: "User status updated." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "ACTION FAILED", description: err.message, variant: "destructive" });
     }
   });
 }
@@ -215,5 +174,18 @@ export function useStats() {
       if (!res.ok) throw new Error("Failed to fetch stats");
       return res.json();
     },
+  });
+}
+
+export function useProfile(id: number) {
+  return useQuery<SafeUser>({
+    queryKey: [api.users.profile.path, id],
+    queryFn: async () => {
+      const url = buildUrl(api.users.profile.path, { id });
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch user");
+      return res.json();
+    },
+    enabled: !!id,
   });
 }
