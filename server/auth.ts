@@ -22,23 +22,21 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
-  // Настройка сессий с учетом специфики Render (прокси + HTTPS)
+  // На Render ОБЯЗАТЕЛЬНО доверяем прокси для работы куки
+  app.set("trust proxy", 1);
+
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "cyberpunk_neon_secret_2026",
+    secret: process.env.SESSION_SECRET || "fallback_secret_for_dev_only",
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
-    proxy: true, // ВАЖНО: Render использует прокси
+    proxy: true,
     cookie: {
-      secure: app.get("env") === "production", // Будет true на Render
-      sameSite: app.get("env") === "production" ? "lax" : undefined,
+      secure: true, // Всегда true на Render (HTTPS)
+      sameSite: "lax",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     },
   };
-
-  if (app.get("env") === "production") {
-    app.set("trust proxy", 1); // Доверяем первому прокси (Render)
-  }
 
   app.use(session(sessionSettings));
   app.use(passport.initialize());
@@ -68,51 +66,41 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // --- API РОУТЫ ---
-
   app.post("/api/register", async (req, res) => {
     try {
       const { username, password } = req.body;
-      if (!username || !password) return res.status(400).send("Missing credentials");
+      if (!username || !password) return res.status(400).json({ message: "Missing credentials" });
 
       const existingUser = await storage.getUserByUsername(username);
-      if (existingUser) return res.status(400).send("Username already taken");
+      if (existingUser) return res.status(400).json({ message: "Username already taken" });
 
       const passwordHash = await hashPassword(password);
-      // Убеждаемся, что передаем дефолтные поля (роль, статус), если они не пришли
       const user = await storage.createUser({
         ...req.body,
         passwordHash,
-        role: req.body.role || "MEMBER",
-        status: req.body.status || "PENDING"
+        role: "MEMBER",
+        status: "PENDING"
       });
 
       req.login(user, (err) => {
-        if (err) return res.status(500).send("Login failed after registration");
+        if (err) return res.status(500).json({ message: "Login failed" });
         res.status(201).json(user);
       });
     } catch (e) {
-      console.error("Registration error:", e);
-      res.status(500).send("Registration error");
+      console.error("CRITICAL REGISTRATION ERROR:", e);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err, user, info) => {
       if (err) return next(err);
-      if (!user) return res.status(401).send("Invalid username or password");
+      if (!user) return res.status(401).json({ message: "Invalid credentials" });
       req.login(user, (err) => {
         if (err) return next(err);
         res.status(200).json(user);
       });
     })(req, res, next);
-  });
-
-  app.post("/api/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) return res.status(500).send("Logout failed");
-      res.sendStatus(200);
-    });
   });
 
   app.get("/api/user", (req, res) => {
