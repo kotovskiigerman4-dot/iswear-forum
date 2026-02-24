@@ -16,7 +16,7 @@ export default function Home() {
         <div className="lg:col-span-3 space-y-6">
           <div className="flex items-center gap-3 border-b border-border pb-4">
             <FolderGit2 className="text-primary w-6 h-6" />
-            <h1 className="text-2xl text-primary">{leet("DIRECTORY_INDEX")}</h1>
+            <h1 className="text-2xl text-primary">{leet("main_page")}</h1>
           </div>
 
           {isLoading ? (
@@ -56,7 +56,7 @@ export default function Home() {
         <div className="space-y-6">
           <div className="flex items-center gap-3 border-b border-border pb-4">
             <Activity className="text-accent w-6 h-6" />
-            <h2 className="text-xl text-accent">{leet("SYS_STATS")}</h2>
+            <h2 className="text-xl text-accent">{leet("i_swear_forum")}</h2>
           </div>
           
           <Card className="p-4 space-y-4 border-accent/30">
