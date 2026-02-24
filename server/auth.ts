@@ -9,12 +9,14 @@ import { User as SelectUser } from "@shared/schema";
 
 const scryptAsync = promisify(scrypt);
 
+// Хеширование пароля (используем scrypt для безопасности)
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 64)) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
 }
 
+// Сравнение паролей
 async function comparePasswords(supplied: string, stored: string) {
   const [hashed, salt] = stored.split(".");
   const hashedBuf = Buffer.from(hashed, "hex");
@@ -23,15 +25,15 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
+  // Настройка сессий
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "cyberpunk_secret_key_1337",
+    secret: process.env.SESSION_SECRET || "cyberpunk_neon_secret_2026", // В идеале поставь длинную строку в ENV
     resave: false,
     saveUninitialized: false,
-    store: storage.sessionStore,
+    store: storage.sessionStore, // Важно: храним сессии в БД, а не в памяти
     cookie: { 
       secure: app.get("env") === "production",
-      sameSite: "lax",
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 дней
+      maxAge: 30 * 24 * 60 * 60 * 1000 // Сессия живет 30 дней
     }
   };
 
@@ -43,6 +45,7 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Стратегия авторизации
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
@@ -57,7 +60,7 @@ export function setupAuth(app: Express) {
     }),
   );
 
-  passport.serializeUser((user, done) => done(null, user.id));
+  passport.serializeUser((user: any, done) => done(null, user.id));
   passport.deserializeUser(async (id: number, done) => {
     try {
       const user = await storage.getUser(id);
@@ -67,18 +70,21 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Роут регистрации
+  // --- РОУТЫ АВТОРИЗАЦИИ ---
+
+  // Регистрация
   app.post("/api/register", async (req, res) => {
     try {
-      const existingUser = await storage.getUserByUsername(req.body.username);
-      if (existingUser) {
-        return res.status(400).send("Username already exists");
-      }
+      const { username, password } = req.body;
+      if (!username || !password) return res.status(400).send("Missing credentials");
 
-      const hashedPassword = await hashPassword(req.body.password);
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) return res.status(400).send("Username already taken");
+
+      const passwordHash = await hashPassword(password);
       const user = await storage.createUser({
         ...req.body,
-        passwordHash: hashedPassword,
+        passwordHash,
       });
 
       req.login(user, (err) => {
@@ -90,12 +96,19 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Роут логина
-  app.post("/api/login", passport.authenticate("local"), (req, res) => {
-    res.status(200).json(req.user);
+  // Вход
+  app.post("/api/login", (req, res, next) => {
+    passport.authenticate("local", (err, user, info) => {
+      if (err) return next(err);
+      if (!user) return res.status(401).send("Invalid username or password");
+      req.login(user, (err) => {
+        if (err) return next(err);
+        res.status(200).json(user);
+      });
+    })(req, res, next);
   });
 
-  // Роут логаута
+  // Выход
   app.post("/api/logout", (req, res) => {
     req.logout((err) => {
       if (err) return res.status(500).send("Logout failed");
@@ -103,7 +116,7 @@ export function setupAuth(app: Express) {
     });
   });
 
-  // Получение текущего юзера
+  // Получение текущего пользователя (для useAuth на фронте)
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     res.json(req.user);
