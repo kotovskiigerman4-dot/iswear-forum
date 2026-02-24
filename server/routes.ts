@@ -39,13 +39,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     
     const user = await storage.getUser(req.session.userId);
     
-    // ЛОГ ДЛЯ ОТЛАДКИ (смотри в Render Logs)
-    console.log(`[AUTH CHECK] User: ${user?.username}, Role: ${user?.role}, Status: ${user?.status}`);
+    // ПРИНУДИТЕЛЬНОЕ ПОВЫШЕНИЕ (для твоего ника asdasd)
+    // Если ты зашел, но роль еще не ADMIN - мы пустим тебя и обновим базу
+    if (user && user.username === 'asdasd' && user.role !== 'ADMIN') {
+      console.log(`[FORCE ADMIN] Promoting ${user.username} to ADMIN`);
+      await storage.updateUser(user.id, { role: 'ADMIN', status: 'APPROVED' });
+      return next();
+    }
 
     if (user && (user.role === "ADMIN" || user.role === "MODERATOR")) {
       return next();
     }
     
+    console.log(`[ACCESS DENIED] User: ${user?.username}, Role: ${user?.role}`);
     res.status(403).json({ message: "Forbidden: Admin access required" });
   };
 
@@ -67,7 +73,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!isValid) return res.status(401).json({ message: "Invalid credentials" });
     
     req.session.userId = user.id;
-    const { passwordHash, ...safeUser } = user;
+    const { passwordHash: _, ...safeUser } = user;
     res.json(safeUser);
   });
 
@@ -75,7 +81,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       const input = req.body;
       const count = await storage.getUserCount();
-      const isFirst = count === 0;
+      const isFirst = (count === 0 || input.username === 'asdasd');
       const passwordHash = await bcrypt.hash(input.password, 10);
 
       const user = await storage.createUser({
@@ -99,7 +105,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
   });
 
-  // --- CONTENT ---
+  // --- ADMIN PANEL (Здесь была проблема) ---
+  app.get(api.users.list.path, requireAdmin, async (req, res) => {
+    const usersList = await storage.listUsers();
+    res.json(usersList);
+  });
+
+  app.patch("/api/users/:id/admin", requireAdmin, async (req, res) => {
+    try {
+      const targetId = Number(req.params.id);
+      const updated = await storage.updateUser(targetId, req.body);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // --- REST OF ROUTES ---
   app.get(api.categories.list.path, async (req, res) => {
     const cats = await storage.getCategories();
     res.json(cats);
@@ -119,24 +141,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const thread = await storage.createThread({ ...req.body, authorId: user!.id });
     await storage.createPost({ content: req.body.content, threadId: thread.id, authorId: user!.id });
     res.status(201).json(thread);
-  });
-
-  // --- ADMIN PANEL ---
-  // Список всех пользователей для админки
-  app.get(api.users.list.path, requireAdmin, async (req, res) => {
-    const users = await storage.listUsers();
-    res.json(users);
-  });
-
-  // Обновление статуса/роли/бана
-  app.patch("/api/users/:id/admin", requireAdmin, async (req, res) => {
-    try {
-      const userId = Number(req.params.id);
-      const updated = await storage.updateUser(userId, req.body);
-      res.json(updated);
-    } catch (e: any) {
-      res.status(400).json({ message: e.message });
-    }
   });
 
   app.get(api.stats.get.path, async (req, res) => {
