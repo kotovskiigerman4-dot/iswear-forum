@@ -1,0 +1,115 @@
+Create a full-stack web forum application called "I SWEAR".
+
+General Requirements:
+- Stack: Node.js + Express.js backend
+- Database: SQL (use PostgreSQL or SQLite for development)
+- Frontend: HTML, CSS, Vanilla JS (or lightweight framework if needed)
+- The app must be ready to deploy on Replit hosting and follow Replit's Terms of Service.
+- Clean, modular code structure with clear comments.
+
+Theme & Design:
+- Dark black/gray UI theme (#0f0f0f, #1a1a1a, #2a2a2a)
+- White primary text (#ffffff)
+- Subtle dark red accent for highlights
+- Minimalistic, cyberpunk-inspired but not aggressive hacker style
+- Monospace font (like JetBrains Mono or Courier New)
+- Smooth hover effects and subtle glow effects
+- All visible forum text (titles, system labels, UI messages, role names, etc.) must automatically render in L33T (leet) style.
+  Example conversion:
+    A -> 4
+    E -> 3
+    I -> 1
+    O -> 0
+    S -> 5
+    T -> 7
+Implement a middleware or frontend utility that converts displayed text into leetspeak automatically.
+
+Forum Structure:
+Create the following main sections:
+- OSINT
+- DEVELOPING
+- Bases
+- Cryptography
+- Sales & Warranty
+- Open Source
+
+Inside the Open Source section, display a static pinned message:
+"зачем ты сюда полез"
+
+User System:
+- Full registration system (Email + Password required)
+- Optional ICQ field (stored but optional)
+- Password hashing using bcrypt
+- SQL database schema for users:
+    id (auto increment, starting from 1)
+    username
+    email
+    icq
+    password_hash
+    role
+    avatar_url
+    banner_url
+    created_at
+
+- The first registered user must automatically get ID = 1 and role = ADMIN.
+
+Roles & Privileges:
+Implement role-based access control with the following roles:
+- ADMIN
+- MODERATOR
+- OLDGEN
+- MEMBER
+
+Permissions:
+- ADMIN: full control, access to admin panel, manage users, roles, delete content
+- MODERATOR: moderate posts and threads
+- OLDGEN: special badge
+- MEMBER: standard user
+
+Profile Customization:
+- Upload avatar
+- Upload profile banner
+- Editable profile bio
+- Display role badge on profile and posts
+
+Forum Features:
+- Create threads
+- Reply to threads
+- Edit/delete own posts
+- Admin/moderator moderation tools
+- Member counter displayed on homepage
+- Display user ID publicly on profile (first user must be ID 1)
+
+Admin Panel:
+- Dashboard
+- Total user count
+- Total threads count
+- Role management
+- Ban/unban user
+- Delete threads/posts
+- Search users
+
+Security (legitimate protections only):
+- Use bcrypt for password hashing
+- Use express-rate-limit
+- Use helmet middleware
+- Use CSRF protection
+- Use prepared SQL statements
+- Input validation & sanitization
+- Basic logging for suspicious login attempts
+
+Deployment:
+- Ensure the app runs with `npm start`
+- Include proper package.json
+- Configure for Replit deployment
+- Use environment variables for secrets
+
+Project Structure:
+- /routes
+- /controllers
+- /models
+- /middleware
+- /public
+- /views (if using templating)
+
+Make the code production-ready, organized, and clearly commented.
