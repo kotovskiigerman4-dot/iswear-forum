@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react"; // Добавили useRef
 import { useThread, useCreatePost, useDeletePost, useDeleteThread } from "@/hooks/use-api";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, Button, Textarea, RoleBadge } from "@/components/ui/cyber-components";
@@ -6,7 +6,8 @@ import { Layout } from "@/components/layout";
 import { Link, useParams, useLocation } from "wouter";
 import { leet } from "@/lib/leet";
 import { format } from "date-fns";
-import { Trash2, Reply } from "lucide-react";
+import { Trash2, Reply, Paperclip, FileText, X } from "lucide-react"; // Новые иконки
+import { api } from "@shared/routes";
 
 export default function ThreadView() {
   const { id } = useParams();
@@ -19,13 +20,50 @@ export default function ThreadView() {
   const deleteThread = useDeleteThread();
   
   const [content, setContent] = useState("");
+  // Состояния для файла
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      setFileUrl(data.url);
+    } catch (err) {
+      alert("Error uploading file: Only .png and .txt allowed");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleReply = (e: React.FormEvent) => {
     e.preventDefault();
     if (!content) return;
+    
     createPost.mutate(
-      { content, threadId: Number(id) },
-      { onSuccess: () => setContent("") }
+      { 
+        content, 
+        threadId: Number(id),
+        fileUrl: fileUrl || undefined // Передаем ссылку на файл
+      },
+      { 
+        onSuccess: () => {
+          setContent("");
+          setFileUrl(null); // Очищаем файл после отправки
+        } 
+      }
     );
   };
 
@@ -41,7 +79,7 @@ export default function ThreadView() {
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header */}
+        {/* Header - без изменений */}
         <div className="border-b border-border pb-4 flex justify-between items-start">
           <div>
             <Link href={`/category/${thread.categoryId}`} className="text-xs text-primary hover:underline mb-2 block">
@@ -73,7 +111,6 @@ export default function ThreadView() {
         <div className="space-y-4">
           {thread.posts?.map((post) => (
             <div key={post.id} className="flex flex-col md:flex-row gap-4">
-              {/* Author Sidebar */}
               <Card className="w-full md:w-48 p-4 shrink-0 flex flex-col items-center text-center bg-card/50">
                 <div className="w-16 h-16 bg-secondary border border-border mb-3 flex items-center justify-center overflow-hidden">
                   {post.author.avatarUrl ? (
@@ -86,14 +123,8 @@ export default function ThreadView() {
                   {post.author.username}
                 </Link>
                 <RoleBadge role={post.author.role} />
-                {post.author.icq && (
-                  <div className="text-xs text-muted-foreground mt-2 border-t border-border/50 pt-2 w-full">
-                    ICQ: {post.author.icq}
-                  </div>
-                )}
               </Card>
 
-              {/* Post Content */}
               <Card className="flex-1 flex flex-col min-h-[150px]">
                 <div className="p-3 border-b border-border/50 text-xs text-muted-foreground flex justify-between bg-card/30">
                   <span>{format(new Date(post.createdAt), 'PP pp')}</span>
@@ -108,6 +139,31 @@ export default function ThreadView() {
                 </div>
                 <div className="p-4 text-foreground whitespace-pre-wrap flex-1">
                   {post.content}
+                  
+                  {/* ОТОБРАЖЕНИЕ ПРИКРЕПЛЕННОГО ФАЙЛА */}
+                  {post.fileUrl && (
+                    <div className="mt-4 p-2 border border-primary/20 bg-primary/5 rounded">
+                      {post.fileUrl.endsWith('.png') ? (
+                        <a href={post.fileUrl} target="_blank" rel="noreferrer">
+                          <img 
+                            src={post.fileUrl} 
+                            alt="attachment" 
+                            className="max-w-md max-h-96 object-contain border border-primary/30 hover:border-primary transition-colors" 
+                          />
+                        </a>
+                      ) : (
+                        <a 
+                          href={post.fileUrl} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="flex items-center gap-2 text-primary hover:underline"
+                        >
+                          <FileText className="w-5 h-5" />
+                          <span>{leet("VIEW_ATTACHED_DATA")} (.txt)</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
               </Card>
             </div>
@@ -129,7 +185,38 @@ export default function ThreadView() {
                 placeholder="Compose message block..." 
                 rows={4} 
               />
-              <Button type="submit" disabled={createPost.isPending}>
+              
+              {/* ПАНЕЛЬ ФАЙЛА */}
+              <div className="flex items-center gap-4">
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleFileUpload} 
+                  accept=".png,.txt" 
+                  className="hidden" 
+                />
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                >
+                  <Paperclip className="w-4 h-4 mr-2" />
+                  {isUploading ? leet("UPLOADING...") : leet("ATTACH_FILE")}
+                </Button>
+
+                {fileUrl && (
+                  <div className="flex items-center gap-2 text-xs text-primary bg-primary/10 px-2 py-1 rounded">
+                    <span>{fileUrl.split('/').pop()}</span>
+                    <button type="button" onClick={() => setFileUrl(null)}>
+                      <X className="w-3 h-3 hover:text-destructive" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <Button type="submit" disabled={createPost.isPending || isUploading}>
                 {createPost.isPending ? leet("SENDING...") : leet("SEND_PAYLOAD")}
               </Button>
             </form>
