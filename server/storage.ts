@@ -54,7 +54,15 @@ export class DatabaseStorage implements IStorage {
 
   async listUsers(): Promise<SafeUser[]> {
     const allUsers = await db.select().from(users);
-    return allUsers.map(({ passwordHash, ...safe }) => safe as SafeUser);
+    
+    // ОТЛАДКА: Если список пустой, мы увидим это в логах сервера
+    console.log(`[STORAGE] listUsers called. Found ${allUsers.length} total users.`);
+    
+    return allUsers.map(u => {
+      // Гарантируем, что пароль не улетит на фронт, и типизируем явно
+      const { passwordHash, ...safeUser } = u;
+      return safeUser as SafeUser;
+    });
   }
 
   async getUserCount(): Promise<number> {
@@ -76,7 +84,6 @@ export class DatabaseStorage implements IStorage {
         const [author] = await db.select().from(users).where(eq(users.id, t.authorId));
         const threadPosts = await db.select({ id: posts.id }).from(posts).where(eq(posts.threadId, t.id));
         
-        // Защита: если автор удален, создаем объект-заглушку
         const safeAuthor = author 
           ? (({ passwordHash, ...s }) => s)(author) 
           : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
