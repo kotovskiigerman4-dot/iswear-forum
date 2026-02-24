@@ -13,7 +13,7 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["ADMIN", "MODERATOR", "OLDGEN", "MEMBER"] }).default("MEMBER").notNull(),
   status: text("status", { enum: ["PENDING", "APPROVED", "REJECTED"] }).default("PENDING").notNull(),
-  // Изменено: добавлено .notNull(), чтобы база данных требовала это поле при вставке
+  // Обязательное поле для базы данных
   applicationReason: text("application_reason").notNull(), 
   avatarUrl: text("avatar_url"),
   bannerUrl: text("banner_url"),
@@ -85,22 +85,21 @@ export const postsRelations = relations(posts, ({ one }) => ({
 
 // === BASE SCHEMAS ===
 
-// Убираем технические поля из схемы вставки
-export const insertUserSchema = createInsertSchema(users)
-  .omit({ 
-    id: true, 
-    createdAt: true, 
-    passwordHash: true,
-    role: true,
-    status: true,
-    isBanned: true 
-  });
+// Схема для внутреннего использования Drizzle
+export const insertUserSchema = createInsertSchema(users).omit({ 
+  id: true, 
+  createdAt: true, 
+  passwordHash: true,
+  role: true,
+  status: true,
+  isBanned: true 
+});
 
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertThreadSchema = createInsertSchema(threads).omit({ id: true, createdAt: true });
 export const insertPostSchema = createInsertSchema(posts).omit({ id: true, createdAt: true, updatedAt: true });
 
-// === EXPLICIT API CONTRACT TYPES ===
+// === API CONTRACT TYPES ===
 
 export type User = typeof users.$inferSelect;
 export type Category = typeof categories.$inferSelect;
@@ -114,10 +113,44 @@ export type ThreadWithAuthor = Thread & { author: SafeUser, replyCount: number }
 export type ThreadWithPosts = ThreadWithAuthor & { posts: PostWithAuthor[], category: Category };
 export type PostWithAuthor = Post & { author: SafeUser };
 
-// Requests
+// === VALIDATION SCHEMAS FOR API ===
+
 export const loginSchema = z.object({
   username: z.string().min(1, "Identifier is required"),
   password: z.string().min(1, "Passphrase is required"),
 });
 
-// Основная схема для регистрации — убедись, что Auth.tsx ш
+export const registerSchema = z.object({
+  username: z.string().min(3, "Username too short").max(30),
+  email: z.string().email("Invalid email"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  icq: z.string().optional(),
+  applicationReason: z.string().min(1, "Application reason is required"),
+});
+
+export type LoginRequest = z.infer<typeof loginSchema>;
+export type RegisterRequest = z.infer<typeof registerSchema>;
+
+export type CreateThreadRequest = {
+  title: string;
+  content: string;
+  categoryId: number;
+};
+
+export type CreatePostRequest = {
+  content: string;
+  threadId: number;
+};
+
+export type UpdateProfileRequest = {
+  bio?: string;
+  avatarUrl?: string;
+  bannerUrl?: string;
+  icq?: string;
+};
+
+export type AdminUpdateUserRequest = {
+  role?: "ADMIN" | "MODERATOR" | "OLDGEN" | "MEMBER";
+  status?: "PENDING" | "APPROVED" | "REJECTED";
+  isBanned?: boolean;
+};
