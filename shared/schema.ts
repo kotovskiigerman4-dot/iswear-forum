@@ -12,6 +12,8 @@ export const users = pgTable("users", {
   icq: text("icq"),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["ADMIN", "MODERATOR", "OLDGEN", "MEMBER"] }).default("MEMBER").notNull(),
+  status: text("status", { enum: ["PENDING", "APPROVED", "REJECTED"] }).default("PENDING").notNull(),
+  applicationReason: text("application_reason"),
   avatarUrl: text("avatar_url"),
   bannerUrl: text("banner_url"),
   bio: text("bio"),
@@ -114,6 +116,7 @@ export const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   icq: z.string().optional(),
+  applicationReason: z.string().min(10, "Please provide a more detailed reason (min 10 chars)"),
 });
 
 export type LoginRequest = z.infer<typeof loginSchema>;
@@ -139,5 +142,6 @@ export type UpdateProfileRequest = {
 
 export type AdminUpdateUserRequest = {
   role?: "ADMIN" | "MODERATOR" | "OLDGEN" | "MEMBER";
+  status?: "PENDING" | "APPROVED" | "REJECTED";
   isBanned?: boolean;
 };
