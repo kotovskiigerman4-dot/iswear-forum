@@ -16,12 +16,15 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Исправление ошибки с прокси на Render
+  app.set('trust proxy', 1);
+
   // Security middlewares
-  app.use(helmet({ contentSecurityPolicy: false })); // Disabled CSP for lite build flexibility
+  app.use(helmet({ contentSecurityPolicy: false }));
 
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per `window`
+    max: 100,
     standardHeaders: true,
     legacyHeaders: false,
   });
@@ -40,6 +43,7 @@ export async function registerRoutes(
       cookie: {
         secure: process.env.NODE_ENV === "production",
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        sameSite: "lax",
       },
     })
   );
@@ -98,25 +102,27 @@ export async function registerRoutes(
 
   app.post(api.auth.register.path, async (req, res) => {
     try {
+      // Валидируем входные данные через схему из shared/schema.ts
       const input = api.auth.register.input.parse(req.body);
       
-      // Check existing
       const existingUser = await storage.getUserByUsername(input.username);
       if (existingUser) return res.status(400).json({ message: "Username taken" });
       const existingEmail = await storage.getUserByEmail(input.email);
       if (existingEmail) return res.status(400).json({ message: "Email taken" });
 
       const count = await storage.getUserCount();
-      const role = count === 0 ? "ADMIN" : "MEMBER"; // First user is ADMIN
+      const role = count === 0 ? "ADMIN" : "MEMBER"; 
       
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(input.password, salt);
 
+      // ГЛАВНОЕ ИСПРАВЛЕНИЕ: Передаем applicationReason в storage
       const user = await storage.createUser({
         username: input.username,
         email: input.email,
         passwordHash,
         icq: input.icq,
+        applicationReason: input.applicationReason,
         role,
       });
 
@@ -124,6 +130,7 @@ export async function registerRoutes(
       const { passwordHash: _, ...safeUser } = user;
       res.status(201).json(safeUser);
     } catch (e: any) {
+      console.error("Registration error:", e);
       res.status(400).json({ message: e.message || "Invalid registration" });
     }
   });
@@ -201,11 +208,6 @@ export async function registerRoutes(
     } catch (e: any) {
       res.status(400).json({ message: e.message });
     }
-  });
-
-  app.delete(api.posts.delete.path, requireAuth, async (req, res) => {
-    // Basic verification of author / moderation
-    res.status(204).end();
   });
 
   // Users
