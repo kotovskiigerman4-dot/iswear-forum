@@ -5,18 +5,15 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import { User as SelectUser } from "@shared/schema";
 
 const scryptAsync = promisify(scrypt);
 
-// Хеширование пароля (используем scrypt для безопасности)
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 64)) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
 }
 
-// Сравнение паролей
 async function comparePasswords(supplied: string, stored: string) {
   const [hashed, salt] = stored.split(".");
   const hashedBuf = Buffer.from(hashed, "hex");
@@ -25,27 +22,28 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
-  // Настройка сессий
+  // Настройка сессий с учетом специфики Render (прокси + HTTPS)
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "cyberpunk_neon_secret_2026", // В идеале поставь длинную строку в ENV
+    secret: process.env.SESSION_SECRET || "cyberpunk_neon_secret_2026",
     resave: false,
     saveUninitialized: false,
-    store: storage.sessionStore, // Важно: храним сессии в БД, а не в памяти
-    cookie: { 
-      secure: app.get("env") === "production",
-      maxAge: 30 * 24 * 60 * 60 * 1000 // Сессия живет 30 дней
-    }
+    store: storage.sessionStore,
+    proxy: true, // ВАЖНО: Render использует прокси
+    cookie: {
+      secure: app.get("env") === "production", // Будет true на Render
+      sameSite: app.get("env") === "production" ? "lax" : undefined,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    },
   };
 
   if (app.get("env") === "production") {
-    app.set("trust proxy", 1);
+    app.set("trust proxy", 1); // Доверяем первому прокси (Render)
   }
 
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // Стратегия авторизации
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
@@ -70,9 +68,8 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // --- РОУТЫ АВТОРИЗАЦИИ ---
+  // --- API РОУТЫ ---
 
-  // Регистрация
   app.post("/api/register", async (req, res) => {
     try {
       const { username, password } = req.body;
@@ -82,9 +79,12 @@ export function setupAuth(app: Express) {
       if (existingUser) return res.status(400).send("Username already taken");
 
       const passwordHash = await hashPassword(password);
+      // Убеждаемся, что передаем дефолтные поля (роль, статус), если они не пришли
       const user = await storage.createUser({
         ...req.body,
         passwordHash,
+        role: req.body.role || "MEMBER",
+        status: req.body.status || "PENDING"
       });
 
       req.login(user, (err) => {
@@ -92,11 +92,11 @@ export function setupAuth(app: Express) {
         res.status(201).json(user);
       });
     } catch (e) {
+      console.error("Registration error:", e);
       res.status(500).send("Registration error");
     }
   });
 
-  // Вход
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err, user, info) => {
       if (err) return next(err);
@@ -108,7 +108,6 @@ export function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  // Выход
   app.post("/api/logout", (req, res) => {
     req.logout((err) => {
       if (err) return res.status(500).send("Logout failed");
@@ -116,7 +115,6 @@ export function setupAuth(app: Express) {
     });
   });
 
-  // Получение текущего пользователя (для useAuth на фронте)
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     res.json(req.user);
