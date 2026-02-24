@@ -116,7 +116,7 @@ export const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   icq: z.string().optional(),
-  applicationReason: z.string().min(10, "Please provide a more detailed reason (min 10 chars)"),
+  applicationReason: z.string().min(1, "Reason is required"),
 });
 
 export type LoginRequest = z.infer<typeof loginSchema>;
