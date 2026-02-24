@@ -28,19 +28,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     })
   );
 
-  // Middlewares
+  // --- MIDDLEWARES ---
   const requireAuth = (req: any, res: any, next: any) => {
     if (!req.session.userId) return res.status(401).json({ message: "Unauthorized" });
     next();
   };
 
   const requireAdmin = async (req: any, res: any, next: any) => {
+    if (!req.session.userId) return res.status(401).json({ message: "No session" });
+    
     const user = await storage.getUser(req.session.userId);
-    // СИЛОВОЙ ДОСТУП: заменяем на твой ник
-    if (user && (user.role === "ADMIN" || user.username === 'asdasd')) {
+    
+    // ЛОГ ДЛЯ ОТЛАДКИ (смотри в Render Logs)
+    console.log(`[AUTH CHECK] User: ${user?.username}, Role: ${user?.role}, Status: ${user?.status}`);
+
+    if (user && (user.role === "ADMIN" || user.role === "MODERATOR")) {
       return next();
     }
-    res.status(403).json({ message: "Forbidden: Admin only" });
+    
+    res.status(403).json({ message: "Forbidden: Admin access required" });
   };
 
   // --- AUTH ---
@@ -55,11 +61,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post(api.auth.login.path, async (req, res) => {
     const { username, password } = req.body;
     const user = await storage.getUserByUsername(username);
-    if (!user || user.isBanned) return res.status(401).json({ message: "Error" });
+    if (!user || user.isBanned) return res.status(401).json({ message: "Invalid credentials or banned" });
+    
     const isValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isValid) return res.status(401).json({ message: "Error" });
+    if (!isValid) return res.status(401).json({ message: "Invalid credentials" });
+    
     req.session.userId = user.id;
-    res.json(user);
+    const { passwordHash, ...safeUser } = user;
+    res.json(safeUser);
   });
 
   app.post(api.auth.register.path, async (req, res) => {
@@ -76,14 +85,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         status: isFirst ? "APPROVED" : "PENDING"
       });
       req.session.userId = user.id;
-      res.status(201).json(user);
+      const { passwordHash: _, ...safeUser } = user;
+      res.status(201).json(safeUser);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
     }
   });
 
   app.post(api.auth.logout.path, (req, res) => {
-    req.session.destroy(() => res.json({ message: "ok" }));
+    req.session.destroy(() => {
+      res.clearCookie('connect.sid');
+      res.json({ message: "ok" });
+    });
   });
 
   // --- CONTENT ---
@@ -94,28 +107,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get(api.threads.get.path, async (req, res) => {
     const thread = await storage.getThread(Number(req.params.id));
+    if (!thread) return res.status(404).json({ message: "Thread not found" });
     res.json(thread);
   });
 
   app.post(api.threads.create.path, requireAuth, async (req, res) => {
     const user = await storage.getUser(req.session.userId!);
     if (user?.status !== "APPROVED" && user?.role !== "ADMIN") {
-      return res.status(403).json({ message: "Not approved" });
+      return res.status(403).json({ message: "Account pending approval" });
     }
     const thread = await storage.createThread({ ...req.body, authorId: user!.id });
     await storage.createPost({ content: req.body.content, threadId: thread.id, authorId: user!.id });
     res.status(201).json(thread);
   });
 
-  // --- ADMIN (Самое важное) ---
+  // --- ADMIN PANEL ---
+  // Список всех пользователей для админки
   app.get(api.users.list.path, requireAdmin, async (req, res) => {
     const users = await storage.listUsers();
     res.json(users);
   });
 
+  // Обновление статуса/роли/бана
   app.patch("/api/users/:id/admin", requireAdmin, async (req, res) => {
     try {
-      const updated = await storage.updateUser(Number(req.params.id), req.body);
+      const userId = Number(req.params.id);
+      const updated = await storage.updateUser(userId, req.body);
       res.json(updated);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
