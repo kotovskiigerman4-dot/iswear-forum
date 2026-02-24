@@ -15,7 +15,7 @@ export interface IStorage {
   listUsers(): Promise<SafeUser[]>;
   getUserCount(): Promise<number>;
   getCategories(): Promise<CategoryWithThreads[]>;
-  getCategory(id: number): Promise<Category | undefined>;
+  getCategory(id: number): Promise<CategoryWithThreads | undefined>; // Исправлен тип
   getThread(id: number): Promise<ThreadWithPosts | undefined>;
   createThread(thread: typeof threads.$inferInsert): Promise<Thread>;
   deleteThread(id: number): Promise<void>;
@@ -54,12 +54,7 @@ export class DatabaseStorage implements IStorage {
 
   async listUsers(): Promise<SafeUser[]> {
     const allUsers = await db.select().from(users);
-    
-    // ОТЛАДКА: Если список пустой, мы увидим это в логах сервера
-    console.log(`[STORAGE] listUsers called. Found ${allUsers.length} total users.`);
-    
     return allUsers.map(u => {
-      // Гарантируем, что пароль не улетит на фронт, и типизируем явно
       const { passwordHash, ...safeUser } = u;
       return safeUser as SafeUser;
     });
@@ -68,6 +63,24 @@ export class DatabaseStorage implements IStorage {
   async getUserCount(): Promise<number> {
     const all = await db.select({ id: users.id }).from(users);
     return all.length;
+  }
+
+  // Вспомогательная функция для обогащения тем (чтобы не дублировать код)
+  private async enrichThreads(catThreads: Thread[]): Promise<any[]> {
+    return await Promise.all(catThreads.map(async t => {
+      const [author] = await db.select().from(users).where(eq(users.id, t.authorId));
+      const threadPosts = await db.select({ id: posts.id }).from(posts).where(eq(posts.threadId, t.id));
+      
+      const safeAuthor = author 
+        ? (({ passwordHash, ...s }) => s)(author) 
+        : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
+
+      return {
+        ...t,
+        author: safeAuthor as SafeUser,
+        replyCount: Math.max(0, threadPosts.length - 1)
+      };
+    }));
   }
 
   async getCategories(): Promise<CategoryWithThreads[]> {
@@ -80,29 +93,27 @@ export class DatabaseStorage implements IStorage {
         .orderBy(desc(threads.createdAt))
         .limit(5);
 
-      const enrichedThreads = await Promise.all(catThreads.map(async t => {
-        const [author] = await db.select().from(users).where(eq(users.id, t.authorId));
-        const threadPosts = await db.select({ id: posts.id }).from(posts).where(eq(posts.threadId, t.id));
-        
-        const safeAuthor = author 
-          ? (({ passwordHash, ...s }) => s)(author) 
-          : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
-
-        return {
-          ...t,
-          author: safeAuthor as SafeUser,
-          replyCount: Math.max(0, threadPosts.length - 1)
-        };
-      }));
-
+      const enrichedThreads = await this.enrichThreads(catThreads);
       result.push({ ...cat, threads: enrichedThreads });
     }
     return result;
   }
 
-  async getCategory(id: number): Promise<Category | undefined> {
+  // ИСПРАВЛЕННЫЙ МЕТОД: Теперь возвращает категорию С ТЕМАМИ
+  async getCategory(id: number): Promise<CategoryWithThreads | undefined> {
     const [cat] = await db.select().from(categories).where(eq(categories.id, id));
-    return cat;
+    if (!cat) return undefined;
+
+    const catThreads = await db.select().from(threads)
+      .where(eq(threads.categoryId, cat.id))
+      .orderBy(desc(threads.createdAt));
+
+    const enrichedThreads = await this.enrichThreads(catThreads);
+
+    return {
+      ...cat,
+      threads: enrichedThreads
+    };
   }
 
   async getThread(id: number): Promise<ThreadWithPosts | undefined> {
