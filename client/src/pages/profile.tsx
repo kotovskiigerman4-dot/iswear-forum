@@ -1,23 +1,25 @@
 import { useState, useEffect } from "react";
-import { useProfile } from "@/hooks/use-api";
+import { useProfile, useUpdateProfile } from "@/hooks/use-api";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, Button, Input, Textarea, RoleBadge } from "@/components/ui/cyber-components";
 import { Layout } from "@/components/layout";
 import { useParams } from "wouter";
 import { leet } from "@/lib/leet";
 import { format } from "date-fns";
-import { User as UserIcon, Settings2, Shield } from "lucide-react";
+import { User as UserIcon, Settings2, Shield, AlertCircle } from "lucide-react";
 
 export default function Profile() {
   const { id } = useParams();
   const { data: profile, isLoading, error } = useProfile(Number(id));
   const { user } = useAuth();
+  const updateProfile = useUpdateProfile(); // ✅ ДОБАВИТЬ ЭТУ ФУНКЦИЮ
   
   const [isEditing, setIsEditing] = useState(false);
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [bannerUrl, setBannerUrl] = useState("");
   const [icq, setIcq] = useState("");
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const isOwner = user?.id === Number(id);
 
@@ -30,11 +32,25 @@ export default function Profile() {
     }
   }, [profile]);
 
-  const handleUpdate = (e) => {
+  const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
-    // Здесь должен быть вызов функции обновления профиля
-    // updateProfile.mutate({ id: Number(id), data: { bio, avatarUrl, bannerUrl, icq } });
-    setIsEditing(false); // Закрыть режим редактирования после обновления
+    setUpdateError(null);
+    
+    // ✅ ИСПРАВИТЬ: Вызвать функцию обновления
+    updateProfile.mutate(
+      { 
+        id: Number(id), 
+        data: { bio, avatarUrl, bannerUrl, icq } 
+      },
+      {
+        onSuccess: () => {
+          setIsEditing(false);
+        },
+        onError: (err) => {
+          setUpdateError(typeof err === 'string' ? err : "Ошибка обновления профиля");
+        }
+      }
+    );
   };
 
   if (isLoading) return <Layout><div className="animate-pulse h-64 bg-card" /></Layout>;
@@ -84,25 +100,52 @@ export default function Profile() {
 
             {isEditing ? (
               <Card className="p-6 border-primary/50">
+                {/* ✅ ДОБАВИТЬ ОБРАБОТКУ ОШИБОК */}
+                {updateError && (
+                  <div className="mb-4 p-3 border border-red-500 bg-red-500/10 text-red-500 text-xs flex items-center gap-2 rounded">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{updateError}</span>
+                  </div>
+                )}
+                
                 <form onSubmit={handleUpdate} className="space-y-4">
                   <div>
                     <label className="text-xs text-muted-foreground uppercase">{leet("AVATAR_URL")}</label>
-                    <Input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="https://..." />
+                    <Input 
+                      value={avatarUrl} 
+                      onChange={e => setAvatarUrl(e.target.value)} 
+                      placeholder="https://..." 
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground uppercase">{leet("BANNER_URL")}</label>
-                    <Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} placeholder="https://..." />
+                    <Input 
+                      value={bannerUrl} 
+                      onChange={e => setBannerUrl(e.target.value)} 
+                      placeholder="https://..." 
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground uppercase">ICQ</label>
-                    <Input value={icq} onChange={e => setIcq(e.target.value)} placeholder="UIN..." />
+                    <Input 
+                      value={icq} 
+                      onChange={e => setIcq(e.target.value)} 
+                      placeholder="UIN..." 
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground uppercase">{leet("BIO")}</label>
-                    <Textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} />
+                    <Textarea 
+                      value={bio} 
+                      onChange={e => setBio(e.target.value)} 
+                      rows={4} 
+                    />
                   </div>
-                  <Button type="submit">
-                    {leet("SAVE_PARAMETERS")}
+                  <Button 
+                    type="submit" 
+                    disabled={updateProfile.isPending} // ✅ ДОБАВИТЬ СОСТОЯНИЕ ЗАГРУЗКИ
+                  >
+                    {updateProfile.isPending ? leet("SAVING...") : leet("SAVE_PARAMETERS")}
                   </Button>
                 </form>
               </Card>
