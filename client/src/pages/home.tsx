@@ -56,13 +56,13 @@ export default function Home() {
         <div className="space-y-6">
           <div className="flex items-center gap-3 border-b border-border pb-4">
             <Activity className="text-accent w-6 h-6" />
-            <h2 className="text-xl text-accent">{leet("i_swear_forum")}</h2>
+            <h2 className="text-xl text-accent">{leet("the_third_eye_sees_everyone")}</h2>
           </div>
           
           <Card className="p-4 space-y-4 border-accent/30">
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-2 text-muted-foreground">
-                <Users className="w-4 h-4" /> {leet("OPERATORS")}
+                <Users className="w-4 h-4" /> {leet("MEMBERS")}
               </span>
               <span className="font-bold text-foreground">{stats?.userCount || 0}</span>
             </div>
