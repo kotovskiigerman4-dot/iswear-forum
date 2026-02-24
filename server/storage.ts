@@ -1,4 +1,7 @@
 import { db } from "./db";
+import { pool } from "./db"; // Убедись, что pool экспортируется из db.ts
+import session from "express-session";
+import connectPg from "connect-pg-simple";
 import { eq, desc, sql } from "drizzle-orm";
 import {
   users, categories, threads, posts,
@@ -6,7 +9,13 @@ import {
   type CategoryWithThreads, type ThreadWithPosts, type SafeUser,
 } from "@shared/schema";
 
+const PostgresSessionStore = connectPg(session);
+
 export interface IStorage {
+  // Хранилище сессий для Passport.js
+  sessionStore: session.Store;
+  
+  // Пользователи
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -14,18 +23,34 @@ export interface IStorage {
   updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User>;
   listUsers(): Promise<SafeUser[]>;
   getUserCount(): Promise<number>;
+  
+  // Категории и треды
   getCategories(): Promise<CategoryWithThreads[]>;
   getCategory(id: number): Promise<CategoryWithThreads | undefined>;
   getThread(id: number): Promise<ThreadWithPosts | undefined>;
   createThread(thread: typeof threads.$inferInsert): Promise<Thread>;
   deleteThread(id: number): Promise<void>;
   getThreadCount(): Promise<number>;
+  
+  // Посты
   createPost(post: typeof posts.$inferInsert): Promise<Post>;
   deletePost(id: number): Promise<void>;
+  
+  // Инициализация
   seedCategories(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
+  public sessionStore: session.Store;
+
+  constructor() {
+    // Настройка хранения сессий в таблице "session" базы данных
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true,
+    });
+  }
+
   // --- USER METHODS ---
   async getUser(id: number): Promise<User | undefined> {
     const cleanId = Math.floor(Number(id));
