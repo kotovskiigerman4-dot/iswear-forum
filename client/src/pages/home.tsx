@@ -62,7 +62,7 @@ export default function Home() {
           <Card className="p-4 space-y-4 border-accent/30">
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-2 text-muted-foreground">
-                <Users className="w-4 h-4" /> {leet("MEMBERS")}
+                <Users className="w-4 h-4" /> {leet("OPERATORS")}
               </span>
               <span className="font-bold text-foreground">{stats?.userCount || 0}</span>
             </div>
