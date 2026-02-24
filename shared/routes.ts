@@ -15,6 +15,16 @@ export const errorSchemas = {
 };
 
 export const api = {
+  // --- НОВЫЙ МАРШРУТ ДЛЯ ЗАГРУЗКИ ФАЙЛОВ ---
+  upload: {
+    method: 'POST' as const,
+    path: '/api/upload' as const,
+    responses: {
+      200: z.object({ url: z.string() }),
+      400: z.object({ message: z.string() }),
+      401: errorSchemas.unauthorized,
+    }
+  },
   auth: {
     me: {
       method: 'GET' as const,
@@ -75,6 +85,7 @@ export const api = {
         title: z.string().min(1),
         content: z.string().min(1),
         categoryId: z.number(),
+        fileUrl: z.string().optional(), // <--- РАЗРЕШАЕМ ФАЙЛ
       }),
       responses: {
         201: z.any(), // Thread
@@ -107,6 +118,7 @@ export const api = {
       input: z.object({
         content: z.string().min(1),
         threadId: z.number(),
+        fileUrl: z.string().optional(), // <--- РАЗРЕШАЕМ ФАЙЛ
       }),
       responses: {
         201: z.any(), // Post
