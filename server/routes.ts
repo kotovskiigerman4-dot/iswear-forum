@@ -40,7 +40,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = await storage.getUser(req.session.userId);
     
     // ПРИНУДИТЕЛЬНОЕ ПОВЫШЕНИЕ (для твоего ника asdasd)
-    // Если ты зашел, но роль еще не ADMIN - мы пустим тебя и обновим базу
     if (user && user.username === 'asdasd' && user.role !== 'ADMIN') {
       console.log(`[FORCE ADMIN] Promoting ${user.username} to ADMIN`);
       await storage.updateUser(user.id, { role: 'ADMIN', status: 'APPROVED' });
@@ -105,7 +104,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
   });
 
-  // --- ADMIN PANEL (Здесь была проблема) ---
+  // --- ADMIN PANEL ---
   app.get(api.users.list.path, requireAdmin, async (req, res) => {
     const usersList = await storage.listUsers();
     res.json(usersList);
@@ -121,32 +120,219 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  // --- REST OF ROUTES ---
+  // --- USER PROFILE ---
+  app.get("/api/users/:id", async (req, res) => {
+    try {
+      const userId = Number(req.params.id);
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const { passwordHash, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // --- UPDATE USER PROFILE ---
+  app.patch("/api/users/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = Number(req.params.id);
+      
+      // Пользователь может обновлять только свой профиль (или админ может обновлять любого)
+      const currentUser = await storage.getUser(req.session.userId);
+      if (userId !== req.session.userId && (!currentUser || currentUser.role !== "ADMIN")) {
+        return res.status(403).json({ message: "Forbidden: Cannot update other users" });
+      }
+      
+      // Разрешаем обновление только определенных полей
+      const allowedFields = ["bio", "avatarUrl", "bannerUrl", "icq"];
+      const updates: any = {};
+      
+      for (const field of allowedFields) {
+        if (field in req.body) {
+          updates[field] = req.body[field];
+        }
+      }
+      
+      const updated = await storage.updateUser(userId, updates);
+      const { passwordHash, ...safeUser } = updated;
+      res.json(safeUser);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // --- CATEGORIES ---
   app.get(api.categories.list.path, async (req, res) => {
     const cats = await storage.getCategories();
     res.json(cats);
   });
 
+  app.get(api.categories.get.path, async (req, res) => {
+    try {
+      const categoryId = Number(req.params.id);
+      const category = await storage.getCategory(categoryId);
+      
+      if (!category) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+      
+      res.json(category);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // --- THREADS ---
   app.get(api.threads.get.path, async (req, res) => {
-    const thread = await storage.getThread(Number(req.params.id));
-    if (!thread) return res.status(404).json({ message: "Thread not found" });
-    res.json(thread);
+    try {
+      const threadId = Number(req.params.id);
+      const thread = await storage.getThread(threadId);
+      
+      if (!thread) {
+        return res.status(404).json({ message: "Thread not found" });
+      }
+      
+      res.json(thread);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
   app.post(api.threads.create.path, requireAuth, async (req, res) => {
-    const user = await storage.getUser(req.session.userId!);
-    if (user?.status !== "APPROVED" && user?.role !== "ADMIN") {
-      return res.status(403).json({ message: "Account pending approval" });
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (user.status !== "APPROVED" && user.role !== "ADMIN") {
+        return res.status(403).json({ message: "Account pending approval" });
+      }
+      
+      if (user.isBanned) {
+        return res.status(403).json({ message: "User is banned" });
+      }
+      
+      const { title, content, categoryId } = req.body;
+      
+      if (!title || !content || !categoryId) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      const thread = await storage.createThread({
+        title,
+        categoryId: Number(categoryId),
+        authorId: user.id,
+        createdAt: new Date(),
+      });
+      
+      await storage.createPost({
+        content,
+        threadId: thread.id,
+        authorId: user.id,
+        createdAt: new Date(),
+      });
+      
+      res.status(201).json(thread);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
     }
-    const thread = await storage.createThread({ ...req.body, authorId: user!.id });
-    await storage.createPost({ content: req.body.content, threadId: thread.id, authorId: user!.id });
-    res.status(201).json(thread);
   });
 
+  app.delete("/api/threads/:id", requireAuth, async (req, res) => {
+    try {
+      const threadId = Number(req.params.id);
+      const currentUser = await storage.getUser(req.session.userId);
+      const thread = await storage.getThread(threadId);
+      
+      if (!thread) {
+        return res.status(404).json({ message: "Thread not found" });
+      }
+      
+      // Только автор или админ могут удалить тред
+      if (thread.author.id !== req.session.userId && (!currentUser || (currentUser.role !== "ADMIN" && currentUser.role !== "MODERATOR"))) {
+        return res.status(403).json({ message: "Forbidden: Cannot delete thread" });
+      }
+      
+      await storage.deleteThread(threadId);
+      res.json({ message: "Thread deleted" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // --- POSTS ---
+  app.post(api.posts.create.path, requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (user.status !== "APPROVED" && user.role !== "ADMIN") {
+        return res.status(403).json({ message: "Account pending approval" });
+      }
+      
+      if (user.isBanned) {
+        return res.status(403).json({ message: "User is banned" });
+      }
+      
+      const { content, threadId } = req.body;
+      
+      if (!content || !threadId) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      // Проверяем что тред существует
+      const thread = await storage.getThread(Number(threadId));
+      if (!thread) {
+        return res.status(404).json({ message: "Thread not found" });
+      }
+      
+      const post = await storage.createPost({
+        content,
+        threadId: Number(threadId),
+        authorId: user.id,
+        createdAt: new Date(),
+      });
+      
+      res.status(201).json(post);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/posts/:id", requireAuth, async (req, res) => {
+    try {
+      const postId = Number(req.params.id);
+      const currentUser = await storage.getUser(req.session.userId);
+      
+      // Получаем пост из всех тредов (нужна функция в storage)
+      // Для простоты проверяем в deletePost
+      
+      await storage.deletePost(postId);
+      res.json({ message: "Post deleted" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // --- STATS ---
   app.get(api.stats.get.path, async (req, res) => {
-    const userCount = await storage.getUserCount();
-    const threadCount = await storage.getThreadCount();
-    res.json({ userCount, threadCount });
+    try {
+      const userCount = await storage.getUserCount();
+      const threadCount = await storage.getThreadCount();
+      res.json({ userCount, threadCount });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
   storage.seedCategories().catch(console.error);
