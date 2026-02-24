@@ -5,14 +5,14 @@ import { setupAuth } from "./auth";
 import multer from "multer";
 import helmet from "helmet";
 
-// Настройка Multer: храним файл в оперативной памяти для конвертации
+// Настройка Multer
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 3 * 1024 * 1024 } // Лимит 3МБ
+  limits: { fileSize: 3 * 1024 * 1024 } 
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // 1. Настройка безопасности (CSP разрешает data: для картинок в БД)
+  // 1. Безопасность
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -31,7 +31,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
   // --- API ЗАГРУЗКИ ФАЙЛОВ ---
-  // Превращает картинку в Base64. Это решает проблему удаления файлов при деплое.
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -45,10 +44,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- API ПОЛЬЗОВАТЕЛЕЙ ---
   app.get("/api/users/:id", async (req, res) => {
-    const user = await storage.getUser(parseInt(req.params.id));
-    if (!user) return res.status(404).json({ message: "User not found" });
-    const { passwordHash, ...safeUser } = user;
-    res.json(safeUser);
+    try {
+      const user = await storage.getUser(parseInt(req.params.id));
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const { passwordHash, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (e) {
+      res.status(500).json({ message: "Server error" });
+    }
   });
 
   app.patch("/api/users/:id", async (req, res) => {
@@ -64,12 +67,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- АДМИНКА (Принятие заявок и управление) ---
+  // --- АДМИНКА ---
   app.patch("/api/users/:id/admin", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== "ADMIN") return res.sendStatus(403);
-    const id = parseInt(req.params.id);
     try {
-      // Если обновляем через админку, можно передавать статус APPROVED/REJECTED
+      const id = parseInt(req.params.id);
       const updated = await storage.updateUser(id, req.body);
       res.json(updated);
     } catch (e: any) {
@@ -83,7 +85,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(users);
   });
 
-  // --- ФОРУМ: КАТЕГОРИИ, ТРЕДЫ, ПОСТЫ ---
+  // --- ФОРУМ ---
   app.get("/api/categories", async (_req, res) => {
     const categories = await storage.getCategories();
     res.json(categories);
@@ -102,7 +104,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         authorId: req.user.id
       });
-      // Создаем первый пост автоматически (содержание треда)
       await storage.createPost({
         content: req.body.content,
         threadId: thread.id,
