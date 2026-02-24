@@ -52,7 +52,7 @@ function Router() {
             {leet("ACCESS_PENDING")}
           </h1>
           <p className="text-muted-foreground font-mono text-sm leading-relaxed">
-            Ваша заявка принята. Ожидайте ответа. <br />
+            Your applicatin has recieved to moderators. Please wait. <br />
             <span className="text-[10px] mt-4 block opacity-50">
               ID: {user.id} | STATUS: {user.status}
             </span>
