@@ -1,13 +1,14 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { setupAuth } from "./auth"; // ДОБАВИТЬ ЭТО
 import { serveStatic } from "./static";
-import { createServer } from "http";
+import { log } from "./vite"; // Или оставь свою функцию log, если она в этом файле
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Логгер
+// Твой логгер (можно оставить тут или вынести)
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true,
@@ -17,14 +18,17 @@ export function log(message: string, source = "express") {
 
 (async () => {
   try {
-    // ИСПРАВЛЕНО: Передаем только app. Сервер создадим ниже.
+    // 1. Сначала настраиваем авторизацию и сессии
+    setupAuth(app); 
+
+    // 2. Затем регистрируем API роуты
     const httpServer = await registerRoutes(app);
 
     // Мидлвар обработки ошибок
     app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
-      console.error("Internal Server Error:", err);
+      console.error("🚨 Server Error:", err);
       if (!res.headersSent) res.status(status).json({ message });
     });
 
