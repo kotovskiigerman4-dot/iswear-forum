@@ -3,17 +3,22 @@ import { useAuth } from "@/hooks/use-auth";
 import { Card, Button } from "@/components/ui/cyber-components";
 import { Layout } from "@/components/layout";
 import { leet } from "@/lib/leet";
-import { ShieldAlert, ShieldCheck, XCircle, Loader2 } from "lucide-react";
 import { Redirect } from "wouter";
 import { useEffect } from "react";
 
+// ПРЯМЫЕ ИМПОРТЫ ИКОНОК (Чтобы Render не падал при сборке)
+import ShieldAlert from "lucide-react/dist/esm/icons/shield-alert";
+import ShieldCheck from "lucide-react/dist/esm/icons/shield-check";
+import XCircle from "lucide-react/dist/esm/icons/x-circle";
+import Loader2 from "lucide-react/dist/esm/icons/loader-2";
+
 export default function Admin() {
-  const { user } = useAuth();
+  const { user: currentUser } = useAuth();
   const { data: users, isLoading, error } = useUsersList();
   const { data: stats } = useStats();
   const updateUser = useAdminUpdateUser();
 
-  // Логирование для отладки — увидишь в консоли браузера
+  // Логирование для отладки
   useEffect(() => {
     if (users) {
       console.log("ADMIN_DEBUG: Received users list:", users);
@@ -23,10 +28,10 @@ export default function Admin() {
     }
   }, [users, error]);
 
-  if (!user) return <Redirect to="/auth" />;
+  if (!currentUser) return <Redirect to="/auth" />;
   
-  // Проверка прав (допускаем админов и модераторов)
-  if (user.role !== "ADMIN" && user.role !== "MODERATOR") {
+  // Проверка прав (админы и модераторы)
+  if (currentUser.role !== "ADMIN" && currentUser.role !== "MODERATOR") {
     return (
       <Layout>
         <div className="text-center text-destructive p-8 text-2xl font-display">
@@ -44,11 +49,11 @@ export default function Admin() {
     updateUser.mutate({ id, data: { status } });
   };
 
-  const handleBanToggle = (id: number, currentStatus: boolean) => {
-    updateUser.mutate({ id, data: { isBanned: !currentStatus } });
+  const handleBanToggle = (id: number, currentBanStatus: boolean) => {
+    updateUser.mutate({ id, data: { isBanned: !currentBanStatus } });
   };
 
-  // Хелпер для нормализации статуса (чтобы PENDING и pending работали одинаково)
+  // Хелпер для нормализации статуса
   const getStatus = (s: string | undefined) => s?.toUpperCase() || "PENDING";
 
   return (
@@ -166,7 +171,7 @@ export default function Admin() {
                                 variant={u.isBanned ? "outline" : "destructive"}
                                 className="h-7 text-[10px] min-w-[80px]"
                                 onClick={() => handleBanToggle(u.id, !!u.isBanned)}
-                                disabled={updateUser.isPending || u.id === user.id}
+                                disabled={updateUser.isPending || u.id === currentUser.id}
                               >
                                 {u.isBanned ? leet("UNBAN") : leet("BAN")}
                               </Button>
