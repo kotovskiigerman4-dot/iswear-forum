@@ -2,6 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter"; // <--- ДОБАВИЛИ
 
 // Вспомогательная функция для обработки ошибок fetch
 async function handleResponse(res: Response) {
@@ -75,15 +76,21 @@ export function useCreateThread() {
 export function useDeleteThread() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation(); // <--- ДОБАВИЛИ ДЛЯ РЕДИРЕКТА
+
   return useMutation({
-    mutationFn: async ({ id }) => {
+    mutationFn: async ({ id, categoryId }) => { // <--- ПРИНИМАЕМ ОБЪЕКТ
       const url = buildUrl(api.threads.delete.path, { id });
       const res = await fetch(url, { method: "DELETE", credentials: "include" });
       if (!res.ok) throw new Error("Purge failed");
+      return { id, categoryId };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [api.categories.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.categories.get.path, data.categoryId] });
       toast({ title: "DELETED", description: "Thread purged." });
+      // Редирект сработает, если в компоненте не переопределен onSuccess
+      setLocation("/"); 
     }
   });
 }
@@ -109,31 +116,29 @@ export function useCreatePost() {
   });
 }
 
-// НОВЫЙ ХУК: Удаление поста (Билд падал из-за его отсутствия)
 export function useDeletePost() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async ({ id, threadId }) => { // <--- ТЕПЕРЬ ПРИНИМАЕМ ОБЪЕКТ
       const res = await fetch(`/api/posts/${id}`, { 
         method: "DELETE", 
         credentials: "include" 
       });
       if (!res.ok) throw new Error("Failed to delete post");
-      return true;
+      return { id, threadId };
     },
-    onSuccess: () => {
-      // Обновляем треды, чтобы пост исчез
-      queryClient.invalidateQueries({ queryKey: [api.threads.get.path] });
+    onSuccess: (data) => {
+      // Обновляем конкретный тред, чтобы пост исчез мгновенно
+      queryClient.invalidateQueries({ queryKey: [api.threads.get.path, data.threadId] });
       toast({ title: "DELETED", description: "Post removed from database." });
     },
   });
 }
 
 // ====================
-// USERS & ADMIN
+// USERS & ADMIN (ОСТАЛЬНОЕ БЕЗ ИЗМЕНЕНИЙ)
 // ====================
-
 export function useUsersList() {
   return useQuery({
     queryKey: ["/api/admin/users"],
@@ -186,9 +191,6 @@ export function useStats() {
   });
 }
 
-// ====================
-// PROFILE
-// ====================
 export function useProfile(id: number) {
   return useQuery({
     queryKey: ["/api/users/profile", id], 
