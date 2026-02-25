@@ -109,23 +109,41 @@ export function useCreatePost() {
   });
 }
 
+// НОВЫЙ ХУК: Удаление поста (Билд падал из-за его отсутствия)
+export function useDeletePost() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/posts/${id}`, { 
+        method: "DELETE", 
+        credentials: "include" 
+      });
+      if (!res.ok) throw new Error("Failed to delete post");
+      return true;
+    },
+    onSuccess: () => {
+      // Обновляем треды, чтобы пост исчез
+      queryClient.invalidateQueries({ queryKey: [api.threads.get.path] });
+      toast({ title: "DELETED", description: "Post removed from database." });
+    },
+  });
+}
+
 // ====================
-// USERS & ADMIN (ИСПРАВЛЕНО)
+// USERS & ADMIN
 // ====================
 
-// 1. Список для админ-панели (защищенный)
 export function useUsersList() {
   return useQuery({
-    queryKey: ["/api/admin/users"], // Исправлен ключ
+    queryKey: ["/api/admin/users"],
     queryFn: async () => {
-      // Исправлен путь на /api/admin/users
       const res = await fetch("/api/admin/users", { credentials: "include" });
       return handleResponse(res);
     },
   });
 }
 
-// 2. Публичный список юзеров для главной страницы (ТВОЙ ЗАПРОС)
 export function usePublicUsers() {
   return useQuery({
     queryKey: ["/api/users"],
@@ -136,13 +154,11 @@ export function usePublicUsers() {
   });
 }
 
-// 3. Обновление пользователя админом (кнопки одобрения/бана)
 export function useAdminUpdateUser() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ id, data }) => {
-      // Исправлен путь: на бэкенде мы сделали PATCH /api/admin/users/:id
       const res = await fetch(`/api/admin/users/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -152,7 +168,6 @@ export function useAdminUpdateUser() {
       return handleResponse(res);
     },
     onSuccess: () => {
-      // Инвалидируем оба ключа, чтобы данные обновились везде
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: [api.stats.get.path] });
@@ -172,7 +187,7 @@ export function useStats() {
 }
 
 // ====================
-// PROFILE (FIXED)
+// PROFILE
 // ====================
 export function useProfile(id: number) {
   return useQuery({
