@@ -3,6 +3,10 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from "multer";
 import { createClient } from '@supabase/supabase-js';
+import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { promisify } from "util";
+
+const hashAsync = promisify(scrypt);
 
 // Настройка клиента Supabase
 const supabase = createClient(
@@ -17,7 +21,6 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // --- MIDDLEWARE: LAST SEEN ---
-  // Обновляем время последнего онлайна при каждом действии авторизованного юзера
   app.use((req, _res, next) => {
     if (req.isAuthenticated() && req.user) {
       storage.updateLastSeen(req.user.id).catch(err => {
@@ -25,6 +28,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
     next();
+  });
+
+  // --- API ПОИСКА ---
+  app.get("/api/search", async (req, res) => {
+    const query = req.query.q as string;
+    if (!query || query.length < 2) return res.json([]);
+    try {
+      const results = await storage.searchThreads(query);
+      res.json(results);
+    } catch (e) {
+      res.status(500).json({ message: "Search failed" });
+    }
   });
 
   // --- API ЗАГРУЗКИ ФАЙЛОВ ---
@@ -59,13 +74,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- API ПОЛЬЗОВАТЕЛЕЙ ---
 
+  // ПИНГ: Получение юзера по имени (для фронтенд-ссылок @username)
+  app.get("/api/users/by-name/:username", async (req, res) => {
+    try {
+      const user = await storage.getUserByUsername(req.params.username);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const { passwordHash, email, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching user" });
+    }
+  });
+
+  // СМЕНА ПАРОЛЯ
+  app.post("/api/user/change-password", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const { oldPassword, newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "New password too short" });
+    }
+
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const [hashed, salt] = user.passwordHash.split(":");
+      const hashedOld = (await hashAsync(oldPassword, salt, 64)) as Buffer;
+      
+      if (!timingSafeEqual(Buffer.from(hashed, "hex"), hashedOld)) {
+        return res.status(400).json({ message: "Invalid old password" });
+      }
+
+      const newSalt = randomBytes(16).toString("hex");
+      const hashedNew = (await hashAsync(newPassword, newSalt, 64)) as Buffer;
+      const newPasswordHash = `${hashedNew.toString("hex")}:${newSalt}`;
+
+      await storage.updateUserPassword(user.id, newPasswordHash);
+      res.json({ message: "Password updated successfully" });
+    } catch (e) {
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
   app.get("/api/users", async (_req, res) => {
     try {
       const allUsers = await storage.listUsers();
-      
-      // Публичный список: только одобренные или админы
       const visibleUsers = allUsers.filter(u => u.status === "APPROVED" || u.role === "ADMIN");
-
       const roleWeight: Record<string, number> = {
         "ADMIN": 1, "MODERATOR": 2, "OLDGEN": 3, "MEMBER": 4, "USER": 5
       };
@@ -84,18 +139,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Получение профиля + инкремент просмотров
   app.get(["/api/users/:id", "/api/profile/:id"], async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
-
-      // Накручиваем просмотры
       await storage.incrementViewCount(id);
-
       const user = await storage.getUser(id);
       if (!user) return res.status(404).json({ message: "User not found" });
-      
       const { passwordHash, ...safeUser } = user;
       res.json(safeUser);
     } catch (e) {
@@ -103,70 +153,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Эндпоинт для тем пользователя в профиле
-  app.get("/api/users/:id/threads", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-      
-      const userThreads = await storage.getUserThreads(id);
-      res.json(userThreads);
-    } catch (e) {
-      res.status(500).json({ message: "Error loading user threads" });
-    }
-  });
-
-  app.patch("/api/users/:id", async (req, res) => {
+  // --- ФОРУМ (УДАЛЕНИЕ) ---
+  app.delete("/api/threads/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const id = parseInt(req.params.id);
-    if (req.user.id !== id && req.user.role !== "ADMIN") return res.sendStatus(403);
+    const thread = await storage.getThread(id);
+    if (!thread) return res.sendStatus(404);
     
-    try {
-      const updated = await storage.updateUser(id, req.body);
-      res.json(updated);
-    } catch (e: any) {
-      res.status(400).json({ message: e.message });
-    }
+    const canDelete = req.user.role === "ADMIN" || req.user.role === "MODERATOR" || thread.authorId === req.user.id;
+    if (!canDelete) return res.sendStatus(403);
+
+    await storage.deleteThread(id);
+    res.sendStatus(204);
   });
 
-  // --- АДМИНКА И МОДЕРАЦИЯ ---
-  
-  app.get("/api/admin/users", async (req, res) => {
+  app.delete("/api/posts/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    const isStaff = req.user.role === "ADMIN" || req.user.role === "MODERATOR";
-    if (!isStaff) return res.sendStatus(403);
-
-    try {
-      const users = await storage.listUsers();
-      res.json(users);
-    } catch (e) {
-      res.status(500).json({ message: "Failed to load admin users" });
-    }
-  });
-
-  app.patch("/api/admin/users/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const isStaff = req.user.role === "ADMIN" || req.user.role === "MODERATOR";
-    if (!isStaff) return res.sendStatus(403);
-
     const id = parseInt(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    const post = await storage.getPost(id); // Убедись, что метод getPost есть в storage
+    if (!post) return res.sendStatus(404);
 
-    try {
-      if (req.user.role === "MODERATOR") {
-        const newRole = req.body.role;
-        if (newRole === "ADMIN" || newRole === "MODERATOR") {
-          return res.status(403).json({ message: "ACCESS DENIED" });
-        }
-      }
-      const updated = await storage.updateUser(id, req.body);
-      res.json(updated);
-    } catch (e: any) {
-      res.status(400).json({ message: e.message });
-    }
+    const canDelete = req.user.role === "ADMIN" || req.user.role === "MODERATOR" || post.authorId === req.user.id;
+    if (!canDelete) return res.sendStatus(403);
+
+    await storage.deletePost(id);
+    res.sendStatus(204);
   });
 
-  // --- ФОРУМ (КАТЕГОРИИ, ТРЕДЫ, ПОСТЫ) ---
+  // --- ОСТАЛЬНЫЕ РОУТЫ (ТРЕДЫ, ПОСТЫ, КАТЕГОРИИ) ---
   app.get("/api/categories", async (_req, res) => {
     try {
       const categories = await storage.getCategories();
@@ -229,16 +243,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(post);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
-    }
-  });
-
-  app.get("/api/stats", async (_req, res) => {
-    try {
-      const userCount = await storage.getUserCount();
-      const threadCount = await storage.getThreadCount();
-      res.json({ users: userCount, threads: threadCount });
-    } catch (e) {
-      res.status(500).json({ users: 0, threads: 0 });
     }
   });
 
