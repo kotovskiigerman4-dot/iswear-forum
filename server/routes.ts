@@ -16,6 +16,17 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // --- MIDDLEWARE: LAST SEEN ---
+  // Обновляем время последнего онлайна при каждом действии авторизованного юзера
+  app.use((req, _res, next) => {
+    if (req.isAuthenticated() && req.user) {
+      storage.updateLastSeen(req.user.id).catch(err => {
+        console.error("Failed to update last_seen:", err);
+      });
+    }
+    next();
+  });
+
   // --- API ЗАГРУЗКИ ФАЙЛОВ ---
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
@@ -52,18 +63,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const allUsers = await storage.listUsers();
       
+      // Публичный список: только одобренные или админы
+      const visibleUsers = allUsers.filter(u => u.status === "APPROVED" || u.role === "ADMIN");
+
       const roleWeight: Record<string, number> = {
-        "ADMIN": 1,
-        "MODERATOR": 2,
-        "OLDGEN": 3,
-        "MEMBER": 4,
-        "USER": 5
+        "ADMIN": 1, "MODERATOR": 2, "OLDGEN": 3, "MEMBER": 4, "USER": 5
       };
 
-      const sortedUsers = allUsers.sort((a, b) => {
+      const sortedUsers = visibleUsers.sort((a, b) => {
         const weightA = roleWeight[a.role] || 100;
         const weightB = roleWeight[b.role] || 100;
-        
         if (weightA !== weightB) return weightA - weightB;
         return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
       });
@@ -75,10 +84,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Получение профиля + инкремент просмотров
   app.get(["/api/users/:id", "/api/profile/:id"], async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
+
+      // Накручиваем просмотры
+      await storage.incrementViewCount(id);
 
       const user = await storage.getUser(id);
       if (!user) return res.status(404).json({ message: "User not found" });
@@ -87,6 +100,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(safeUser);
     } catch (e) {
       res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Эндпоинт для тем пользователя в профиле
+  app.get("/api/users/:id/threads", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      
+      const userThreads = await storage.getUserThreads(id);
+      res.json(userThreads);
+    } catch (e) {
+      res.status(500).json({ message: "Error loading user threads" });
     }
   });
 
@@ -105,7 +131,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- АДМИНКА И МОДЕРАЦИЯ ---
   
-  // Разрешаем модераторам видеть список пользователей в админке
   app.get("/api/admin/users", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const isStaff = req.user.role === "ADMIN" || req.user.role === "MODERATOR";
@@ -119,10 +144,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Разрешаем модераторам изменять статусы и выдавать роли (кроме высших)
   app.patch("/api/admin/users/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
     const isStaff = req.user.role === "ADMIN" || req.user.role === "MODERATOR";
     if (!isStaff) return res.sendStatus(403);
 
@@ -130,16 +153,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
 
     try {
-      // Защита: Модераторы не могут выдавать роли ADMIN или MODERATOR
       if (req.user.role === "MODERATOR") {
         const newRole = req.body.role;
         if (newRole === "ADMIN" || newRole === "MODERATOR") {
-          return res.status(403).json({ 
-            message: "ACCESS DENIED: Moderators cannot grant staff privileges." 
-          });
+          return res.status(403).json({ message: "ACCESS DENIED" });
         }
       }
-
       const updated = await storage.updateUser(id, req.body);
       res.json(updated);
     } catch (e: any) {
@@ -147,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- ФОРУМ (КАТЕГОРИИ) ---
+  // --- ФОРУМ (КАТЕГОРИИ, ТРЕДЫ, ПОСТЫ) ---
   app.get("/api/categories", async (_req, res) => {
     try {
       const categories = await storage.getCategories();
@@ -169,7 +188,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- ТРЕДЫ И ПОСТЫ ---
   app.get("/api/threads/:id", async (req, res) => {
     try {
       const thread = await storage.getThread(parseInt(req.params.id));
