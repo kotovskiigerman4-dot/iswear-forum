@@ -14,7 +14,7 @@ import CategoryView from "@/pages/category";
 import ThreadView from "@/pages/thread";
 import Profile from "@/pages/profile";
 import Admin from "@/pages/admin";
-import UsersList from "@/pages/users-list"; // ДОБАВЛЕНО: Импорт новой страницы
+import UsersList from "@/pages/users-list";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -75,16 +75,20 @@ function Router() {
       <Route path="/auth" component={Auth} />
       <Route path="/category/:id" component={CategoryView} />
       <Route path="/thread/:id" component={ThreadView} />
+      
+      {/* ПРАВКА ТУТ: Добавляем оба варианта пути для профиля */}
       <Route path="/user/:id" component={Profile} />
-      <Route path="/users" component={UsersList} /> {/* ДОБАВЛЕНО: Роут для списка юзеров */}
+      <Route path="/profile/:id" component={Profile} />
+      
+      <Route path="/users" component={UsersList} />
       <Route path="/admin" component={Admin} />
       
+      {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-// ... остальной код App() остается без изменений
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
