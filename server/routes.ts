@@ -48,12 +48,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- API ПОЛЬЗОВАТЕЛЕЙ ---
 
-  // ПУБЛИЧНЫЙ СПИСОК С ИСПРАВЛЕННОЙ ИЕРАРХИЕЙ
   app.get("/api/users", async (_req, res) => {
     try {
       const allUsers = await storage.listUsers();
       
-      // Иерархия: ADMIN -> MODERATOR -> OLDGEN -> MEMBER -> USER
       const roleWeight: Record<string, number> = {
         "ADMIN": 1,
         "MODERATOR": 2,
@@ -67,7 +65,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const weightB = roleWeight[b.role] || 100;
         
         if (weightA !== weightB) return weightA - weightB;
-        // Если роли одинаковые, старые по регистрации выше
         return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
       });
 
@@ -78,7 +75,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Исправленный роут профиля (поддерживает и /api/users/:id и /api/profile/:id для совместимости)
   app.get(["/api/users/:id", "/api/profile/:id"], async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -107,9 +103,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- АДМИНКА ---
+  // --- АДМИНКА И МОДЕРАЦИЯ ---
+  
+  // Разрешаем модераторам видеть список пользователей в админке
   app.get("/api/admin/users", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "ADMIN") return res.sendStatus(403);
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const isStaff = req.user.role === "ADMIN" || req.user.role === "MODERATOR";
+    if (!isStaff) return res.sendStatus(403);
+
     try {
       const users = await storage.listUsers();
       res.json(users);
@@ -118,12 +119,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Разрешаем модераторам изменять статусы и выдавать роли (кроме высших)
   app.patch("/api/admin/users/:id", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "ADMIN") return res.sendStatus(403);
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    const isStaff = req.user.role === "ADMIN" || req.user.role === "MODERATOR";
+    if (!isStaff) return res.sendStatus(403);
+
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
 
     try {
+      // Защита: Модераторы не могут выдавать роли ADMIN или MODERATOR
+      if (req.user.role === "MODERATOR") {
+        const newRole = req.body.role;
+        if (newRole === "ADMIN" || newRole === "MODERATOR") {
+          return res.status(403).json({ 
+            message: "ACCESS DENIED: Moderators cannot grant staff privileges." 
+          });
+        }
+      }
+
       const updated = await storage.updateUser(id, req.body);
       res.json(updated);
     } catch (e: any) {
