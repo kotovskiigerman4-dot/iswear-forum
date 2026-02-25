@@ -4,10 +4,11 @@ import { useProfile, useUpdateProfile } from "@/hooks/use-api";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, Button, Input, Textarea, RoleBadge } from "@/components/ui/cyber-components";
 import { Layout } from "@/components/layout";
-import { useParams } from "wouter";
+import { useParams, Link } from "wouter"; // Добавили Link
 import { leet } from "@/lib/leet";
 import { format } from "date-fns";
-import { User as UserIcon, Settings2, Shield, AlertCircle, Upload, Terminal } from "lucide-react";
+import { User as UserIcon, Settings2, Shield, AlertCircle, Upload, Terminal, Eye, MessageSquare, Clock } from "lucide-react";
+import { useQuery } from "@tanstack/react-query"; // Добавили для загрузки тем
 
 export default function Profile() {
   const { id } = useParams();
@@ -17,6 +18,12 @@ export default function Profile() {
   const { user } = useAuth();
   const updateProfile = useUpdateProfile();
   
+  // Запрос на темы пользователя
+  const { data: userThreads } = useQuery({
+    queryKey: [`/api/users/${userId}/threads`],
+    enabled: !!userId
+  });
+
   const [isEditing, setIsEditing] = useState(false);
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -39,19 +46,37 @@ export default function Profile() {
     }
   }, [profile]);
 
+  // Функция для рендера статуса Online
+  const renderStatus = (lastSeenValue: string | Date | null) => {
+    if (!lastSeenValue) return <span className="text-muted-foreground italic">SIGNAL_LOST</span>;
+    const lastSeen = new Date(lastSeenValue);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - lastSeen.getTime()) / 1000 / 60);
+
+    if (diffInMinutes < 5) {
+      return (
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+          </span>
+          <span className="text-primary font-bold tracking-widest animate-pulse">{leet("ONLINE")}</span>
+        </div>
+      );
+    }
+    return <span className="text-muted-foreground">{diffInMinutes < 60 ? `${diffInMinutes}M AGO` : format(lastSeen, 'HH:mm dd.MM')}</span>;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'banner') => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsUploading(true);
     const formData = new FormData();
     formData.append("file", file);
-
     try {
       const res = await fetch("/api/upload", { method: "POST", body: formData });
       if (!res.ok) throw new Error("Upload failed");
       const data = await res.json();
-      
       if (type === 'avatar') setAvatarUrl(data.url);
       if (type === 'banner') setBannerUrl(data.url);
     } catch (err) {
@@ -64,7 +89,6 @@ export default function Profile() {
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
     setUpdateError(null);
-    
     updateProfile.mutate(
       { id: userId, data: { bio, avatarUrl, bannerUrl, icq } },
       {
@@ -98,16 +122,13 @@ export default function Profile() {
   return (
     <Layout>
       <div className="space-y-0">
-        {/* HEADER SECTION: Banner + Overlapping Avatar */}
         <div className="relative">
-          {/* Banner Container */}
           <div className="h-48 md:h-64 w-full bg-secondary border-b border-border relative overflow-hidden">
             {bannerUrl ? (
               <img src={bannerUrl} alt="banner" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,255,159,0.05)_10px,rgba(0,255,159,0.05)_20px)]" />
             )}
-            {/* Overlay Gradient for contrast */}
             <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
             
             {isOwner && (
@@ -123,10 +144,8 @@ export default function Profile() {
             )}
           </div>
 
-          {/* Profile Info Row: Avatar shift up */}
           <div className="max-w-7xl mx-auto px-8 relative">
             <div className="flex flex-col md:flex-row items-start md:items-end gap-6 -mt-16 md:-mt-20">
-              {/* Avatar Container */}
               <div className="relative group">
                 <div className="w-32 h-32 md:w-40 md:h-40 bg-card border-2 border-primary overflow-hidden z-10 shadow-[0_0_25px_rgba(0,255,159,0.3)] ring-8 ring-background">
                   {avatarUrl ? (
@@ -139,7 +158,6 @@ export default function Profile() {
                 </div>
               </div>
 
-              {/* Username & Role */}
               <div className="pb-2 flex-1">
                 <div className="flex items-center gap-3">
                   <h1 className="text-4xl md:text-5xl text-primary font-display tracking-tighter drop-shadow-[0_0_10px_rgba(0,255,159,0.5)]">
@@ -147,15 +165,17 @@ export default function Profile() {
                   </h1>
                   {profile.role === "ADMIN" && <Shield className="w-6 h-6 text-accent animate-pulse" />}
                 </div>
-                <div className="mt-2">
+                <div className="mt-2 flex items-center gap-4">
                   <RoleBadge role={profile.role} />
+                  <div className="text-[10px] font-mono border-l border-primary/20 pl-4 py-1">
+                    {renderStatus(profile.lastSeen)}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* CONTENT SECTION */}
         <div className="max-w-7xl mx-auto px-8 pt-10 pb-20 flex flex-col md:flex-row gap-8">
           <div className="flex-1 space-y-6">
             {isEditing ? (
@@ -226,43 +246,78 @@ export default function Profile() {
                   </div>
                 </Card>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <Card className="p-4 border-primary/10 bg-card/10 flex flex-col justify-center">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{leet("INIT_DATE")}</p>
-                    <p className="font-mono text-primary mt-1 text-lg">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Clock className="w-3 h-3 text-muted-foreground" />
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{leet("INIT_DATE")}</p>
+                    </div>
+                    <p className="font-mono text-primary text-lg">
                       {profile.createdAt ? format(new Date(profile.createdAt), 'dd.MM.yyyy') : "??.??"}
                     </p>
                   </Card>
                   <Card className="p-4 border-primary/10 bg-card/10 flex flex-col justify-center">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Signal Status</p>
-                    <p className="font-mono text-primary mt-1 text-lg">{profile.icq ? `UIN:${profile.icq}` : "NO_SIGNAL"}</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Eye className="w-3 h-3 text-muted-foreground" />
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{leet("VISUAL_SCAN")}</p>
+                    </div>
+                    <p className="font-mono text-primary text-lg">{profile.views || 0}</p>
                   </Card>
+                  <Card className="p-4 border-primary/10 bg-card/10 flex flex-col justify-center">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Terminal className="w-3 h-3 text-muted-foreground" />
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Network ID</p>
+                    </div>
+                    <p className="font-mono text-primary text-lg">{profile.icq ? `UIN:${profile.icq}` : "NO_SIGNAL"}</p>
+                  </Card>
+                </div>
+
+                {/* --- СЕКЦИЯ ТЕМ ПОЛЬЗОВАТЕЛЯ --- */}
+                <div className="space-y-4">
+                  <h3 className="text-primary font-display uppercase tracking-widest text-sm flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" /> {leet("TRANSMISSIONS_HISTORY")}
+                  </h3>
+                  <div className="grid gap-2">
+                    {userThreads?.length === 0 ? (
+                      <p className="text-muted-foreground font-mono text-xs italic p-4 border border-dashed border-primary/10">NO_DATA_LOGGED</p>
+                    ) : (
+                      userThreads?.map((thread: any) => (
+                        <Link key={thread.id} href={`/thread/${thread.id}`}>
+                          <div className="p-4 border border-primary/5 bg-primary/5 hover:bg-primary/10 hover:border-primary/20 cursor-pointer transition-all group flex justify-between items-center">
+                            <span className="text-sm font-mono group-hover:text-primary transition-colors truncate mr-4">
+                              {thread.title}
+                            </span>
+                            <span className="text-[10px] opacity-40 font-mono shrink-0">
+                              {format(new Date(thread.createdAt), 'dd.MM.yy')}
+                            </span>
+                          </div>
+                        </Link>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             )}
           </div>
           
-          {/* Sidebar Area (Bans or extra stats) */}
-          {(profile.isBanned || profile.role === "ADMIN") && (
-            <div className="w-full md:w-64 space-y-4">
-              {profile.isBanned && (
-                <Card className="p-6 border-destructive bg-destructive/10 text-center shadow-[0_0_20px_rgba(255,0,0,0.2)]">
-                  <Shield className="w-12 h-12 text-destructive mx-auto mb-4" />
-                  <h3 className="text-destructive font-black text-xl uppercase">{leet("BANNED")}</h3>
-                  <p className="text-[8px] text-destructive/60 mt-2 font-mono uppercase leading-tight">
-                    Credentials nullified by system protocol.
-                  </p>
-                </Card>
-              )}
-              {profile.role === "ADMIN" && (
-                <Card className="p-6 border-accent/50 bg-accent/5 text-center">
-                  <Shield className="w-12 h-12 text-accent mx-auto mb-4 animate-pulse" />
-                  <h3 className="text-accent font-black text-xl uppercase">OVERSEER</h3>
-                  <p className="text-[8px] text-accent/60 mt-2 font-mono uppercase">Master access granted.</p>
-                </Card>
-              )}
-            </div>
-          )}
+          <div className="w-full md:w-64 space-y-4">
+            {profile.isBanned && (
+              <Card className="p-6 border-destructive bg-destructive/10 text-center shadow-[0_0_20px_rgba(255,0,0,0.2)]">
+                <Shield className="w-12 h-12 text-destructive mx-auto mb-4" />
+                <h3 className="text-destructive font-black text-xl uppercase">{leet("BANNED")}</h3>
+                <p className="text-[8px] text-destructive/60 mt-2 font-mono uppercase leading-tight">
+                  Credentials nullified by system protocol.
+                </p>
+              </Card>
+            )}
+            {profile.role === "ADMIN" && (
+              <Card className="p-6 border-accent/50 bg-accent/5 text-center">
+                <Shield className="w-12 h-12 text-accent mx-auto mb-4 animate-pulse" />
+                <h3 className="text-accent font-black text-xl uppercase">OVERSEER</h3>
+                <p className="text-[8px] text-accent/60 mt-2 font-mono uppercase">Master access granted.</p>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
     </Layout>
