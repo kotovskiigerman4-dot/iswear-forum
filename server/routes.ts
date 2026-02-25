@@ -47,6 +47,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- API ПОЛЬЗОВАТЕЛЕЙ ---
+
+  // НОВЫЙ РОУТ: Публичный список пользователей с иерархией
+  app.get("/api/users", async (_req, res) => {
+    try {
+      const allUsers = await storage.listUsers();
+      
+      // Иерархия весов: чем меньше число, тем выше в списке
+      const roleWeight: Record<string, number> = {
+        "ADMIN": 1,
+        "MODERATOR": 2,
+        "MEMBER": 3,
+        "USER": 4
+      };
+
+      const sortedUsers = allUsers.sort((a, b) => {
+        const weightA = roleWeight[a.role] || 99;
+        const weightB = roleWeight[b.role] || 99;
+        
+        if (weightA !== weightB) return weightA - weightB;
+        // Если роли одинаковые, сортируем по дате регистрации (старые выше)
+        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      });
+
+      // Удаляем чувствительные данные перед отправкой
+      const safeUsers = sortedUsers.map(({ passwordHash, email, ...user }) => user);
+      res.json(safeUsers);
+    } catch (e) {
+      res.status(500).json({ message: "Failed to fetch neural nodes" });
+    }
+  });
+
   app.get("/api/users/:id", async (req, res) => {
     try {
       const user = await storage.getUser(parseInt(req.params.id));
@@ -71,9 +102,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- АДМИНКА (ИСПРАВЛЕНО) ---
+  // --- АДМИНКА ---
   
-  // Получение всех юзеров (для списка заявок и общего списка)
   app.get("/api/admin/users", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== "ADMIN") return res.sendStatus(403);
     try {
@@ -84,14 +114,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Роут для принятия заявок и смены ролей
   app.patch("/api/admin/users/:id", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== "ADMIN") return res.sendStatus(403);
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
 
     try {
-      // Это позволит админу менять статус на APPROVED и роль на ADMIN/MEMBER
       const updated = await storage.updateUser(id, req.body);
       res.json(updated);
     } catch (e: any) {
