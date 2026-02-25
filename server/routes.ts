@@ -48,29 +48,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- API ПОЛЬЗОВАТЕЛЕЙ ---
 
-  // НОВЫЙ РОУТ: Публичный список пользователей с иерархией
+  // ПУБЛИЧНЫЙ СПИСОК С ИСПРАВЛЕННОЙ ИЕРАРХИЕЙ
   app.get("/api/users", async (_req, res) => {
     try {
       const allUsers = await storage.listUsers();
       
-      // Иерархия весов: чем меньше число, тем выше в списке
+      // Иерархия: ADMIN -> MODERATOR -> OLDGEN -> MEMBER -> USER
       const roleWeight: Record<string, number> = {
         "ADMIN": 1,
         "MODERATOR": 2,
-        "MEMBER": 3,
-        "USER": 4
+        "OLDGEN": 3,
+        "MEMBER": 4,
+        "USER": 5
       };
 
       const sortedUsers = allUsers.sort((a, b) => {
-        const weightA = roleWeight[a.role] || 99;
-        const weightB = roleWeight[b.role] || 99;
+        const weightA = roleWeight[a.role] || 100;
+        const weightB = roleWeight[b.role] || 100;
         
         if (weightA !== weightB) return weightA - weightB;
-        // Если роли одинаковые, сортируем по дате регистрации (старые выше)
+        // Если роли одинаковые, старые по регистрации выше
         return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
       });
 
-      // Удаляем чувствительные данные перед отправкой
       const safeUsers = sortedUsers.map(({ passwordHash, email, ...user }) => user);
       res.json(safeUsers);
     } catch (e) {
@@ -78,10 +78,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users/:id", async (req, res) => {
+  // Исправленный роут профиля (поддерживает и /api/users/:id и /api/profile/:id для совместимости)
+  app.get(["/api/users/:id", "/api/profile/:id"], async (req, res) => {
     try {
-      const user = await storage.getUser(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
+
+      const user = await storage.getUser(id);
       if (!user) return res.status(404).json({ message: "User not found" });
+      
       const { passwordHash, ...safeUser } = user;
       res.json(safeUser);
     } catch (e) {
@@ -103,7 +108,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- АДМИНКА ---
-  
   app.get("/api/admin/users", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== "ADMIN") return res.sendStatus(403);
     try {
@@ -128,13 +132,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- ФОРУМ (КАТЕГОРИИ) ---
-  
   app.get("/api/categories", async (_req, res) => {
     try {
       const categories = await storage.getCategories();
       res.json(categories);
     } catch (e) {
-      console.error("Error categories route:", e);
       res.status(500).json({ message: "Failed to load categories" });
     }
   });
@@ -143,13 +145,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid category ID" });
-
       const category = await storage.getCategory(id);
       if (!category) return res.status(404).json({ message: "Category not found" });
-      
       res.json(category);
     } catch (e) {
-      console.error("Error fetching single category:", e);
       res.status(500).json({ message: "Internal server error" });
     }
   });
