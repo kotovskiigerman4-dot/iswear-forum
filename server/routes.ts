@@ -71,16 +71,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- АДМИНКА ---
+  // --- АДМИНКА (ИСПРАВЛЕНО) ---
+  
+  // Получение всех юзеров (для списка заявок и общего списка)
   app.get("/api/admin/users", async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== "ADMIN") return res.sendStatus(403);
-    const users = await storage.listUsers();
-    res.json(users);
+    try {
+      const users = await storage.listUsers();
+      res.json(users);
+    } catch (e) {
+      res.status(500).json({ message: "Failed to load admin users" });
+    }
+  });
+
+  // Роут для принятия заявок и смены ролей
+  app.patch("/api/admin/users/:id", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== "ADMIN") return res.sendStatus(403);
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+
+    try {
+      // Это позволит админу менять статус на APPROVED и роль на ADMIN/MEMBER
+      const updated = await storage.updateUser(id, req.body);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
   });
 
   // --- ФОРУМ (КАТЕГОРИИ) ---
   
-  // 1. Получение всех категорий для главной
   app.get("/api/categories", async (_req, res) => {
     try {
       const categories = await storage.getCategories();
@@ -91,7 +111,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // 2. ИСПРАВЛЕНО: Добавлен роут для одной категории (чтобы не было NOT FOUND)
   app.get("/api/categories/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -123,7 +142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const thread = await storage.createThread({
         ...req.body,
-        categoryId: parseInt(req.body.categoryId), // Важно привести к числу
+        categoryId: parseInt(req.body.categoryId),
         authorId: req.user.id
       });
       await storage.createPost({
@@ -143,7 +162,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const post = await storage.createPost({
         ...req.body,
-        threadId: parseInt(req.body.threadId), // Приводим к числу
+        threadId: parseInt(req.body.threadId),
         authorId: req.user.id
       });
       res.json(post);
