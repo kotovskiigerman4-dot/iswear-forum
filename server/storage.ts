@@ -20,7 +20,12 @@ export interface IStorage {
   updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User>;
   listUsers(): Promise<SafeUser[]>;
   getUserCount(): Promise<number>;
-  getPendingUsersCount(): Promise<number>; // Новое: для счетчика заявок
+  getPendingUsersCount(): Promise<number>;
+  // --- НОВЫЕ МЕТОДЫ ---
+  updateLastSeen(userId: number): Promise<void>;
+  incrementViewCount(userId: number): Promise<void>;
+  getUserThreads(userId: number): Promise<Thread[]>;
+  // --------------------
   getCategories(): Promise<CategoryWithThreads[]>;
   getCategory(id: number): Promise<CategoryWithThreads | undefined>;
   getThread(id: number): Promise<ThreadWithPosts | undefined>;
@@ -75,10 +80,6 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  /**
-   * ИСПРАВЛЕНО: Теперь возвращает всех пользователей без фильтрации.
-   * Фильтрация (кому показывать только APPROVED) теперь должна происходить в routes.ts
-   */
   async listUsers(): Promise<SafeUser[]> {
     const allUsers = await db.select().from(users);
     return allUsers.map(({ passwordHash, ...safeUser }) => safeUser as SafeUser);
@@ -95,6 +96,32 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.status, "PENDING"));
     return Number(count.value);
   }
+
+  // --- РЕАЛИЗАЦИЯ НОВЫХ МЕТОДОВ ---
+
+  async updateLastSeen(userId: number): Promise<void> {
+    const cleanId = Math.floor(Number(userId));
+    await db.update(users)
+      .set({ lastSeen: new Date() }) // Drizzle автоматически свяжет это с last_seen
+      .where(eq(users.id, cleanId));
+  }
+
+  async incrementViewCount(userId: number): Promise<void> {
+    const cleanId = Math.floor(Number(userId));
+    await db.update(users)
+      .set({ views: sql`${users.views} + 1` })
+      .where(eq(users.id, cleanId));
+  }
+
+  async getUserThreads(userId: number): Promise<Thread[]> {
+    const cleanId = Math.floor(Number(userId));
+    return await db.select()
+      .from(threads)
+      .where(eq(threads.authorId, cleanId))
+      .orderBy(desc(threads.createdAt));
+  }
+
+  // --------------------------------
 
   private async enrichThreads(catThreads: Thread[]): Promise<any[]> {
     return await Promise.all(catThreads.map(async t => {
