@@ -2,13 +2,33 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
+// Твой изначальный список разрешенных зависимостей
 const allowlist = [
-  "@google/generative-ai", "axios", "connect-pg-simple", "cors",
-  "date-fns", "drizzle-orm", "drizzle-zod", "express",
-  "express-rate-limit", "express-session", "jsonwebtoken",
-  "memorystore", "multer", "nanoid", "nodemailer", "openai",
-  "passport", "passport-local", "pg", "stripe", "uuid", "ws",
-  "xlsx", "zod", "zod-validation-error",
+  "@google/generative-ai",
+  "axios",
+  "connect-pg-simple",
+  "cors",
+  "date-fns",
+  "drizzle-orm",
+  "drizzle-zod",
+  "express",
+  "express-rate-limit",
+  "express-session",
+  "jsonwebtoken",
+  "memorystore",
+  "multer",
+  "nanoid",
+  "nodemailer",
+  "openai",
+  "passport",
+  "passport-local",
+  "pg",
+  "stripe",
+  "uuid",
+  "ws",
+  "xlsx",
+  "zod",
+  "zod-validation-error",
 ];
 
 async function buildAll() {
@@ -24,11 +44,8 @@ async function buildAll() {
     ...Object.keys(pkg.devDependencies || {}),
   ];
 
-  // Создаем единый список исключений
-  const frontendOnly = ["lucide-react", "react-icons", "react", "react-dom", "framer-motion", "@tailwindcss/vite"];
-  const externals = allDeps
-    .filter((dep) => !allowlist.includes(dep))
-    .concat(frontendOnly);
+  // Возвращаем стандартную логику внешних зависимостей
+  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
 
   await esbuild({
     entryPoints: ["server/index.ts"],
@@ -40,9 +57,8 @@ async function buildAll() {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
-    external: Array.from(new Set(externals)), // Только один раз!
+    external: externals,
     logLevel: "info",
-    treeShaking: true,
   });
 }
 
