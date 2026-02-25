@@ -14,12 +14,13 @@ import CategoryView from "@/pages/category";
 import ThreadView from "@/pages/thread";
 import Profile from "@/pages/profile";
 import Admin from "@/pages/admin";
+import UsersList from "@/pages/users-list"; // ДОБАВЛЕНО: Импорт новой страницы
 import NotFound from "@/pages/not-found";
 
 function Router() {
   const { user, isLoading } = useAuth();
 
-  // 1. Состояние загрузки (проверка сессии)
+  // 1. Состояние загрузки
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-black text-primary font-mono">
@@ -29,7 +30,7 @@ function Router() {
     );
   }
 
-  // 2. Если не авторизован — показываем только страницу входа
+  // 2. Если не авторизован
   if (!user) {
     return (
       <Switch>
@@ -41,8 +42,7 @@ function Router() {
     );
   }
 
-  // 3. ПРОВЕРКА СТАТУСА: Если аккаунт не одобрен
-  // Админов пропускаем в любом случае, чтобы они не заблокировали сами себя
+  // 3. ПРОВЕРКА СТАТУСА
   if (user.status !== "APPROVED" && user.role !== "ADMIN") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4 text-center">
@@ -52,7 +52,7 @@ function Router() {
             {leet("ACCESS_PENDING")}
           </h1>
           <p className="text-muted-foreground font-mono text-sm leading-relaxed">
-            Your applicatin has recieved to moderators. Please wait. <br />
+            Your application has received to moderators. Please wait. <br />
             <span className="text-[10px] mt-4 block opacity-50">
               ID: {user.id} | STATUS: {user.status}
             </span>
@@ -68,7 +68,7 @@ function Router() {
     );
   }
 
-  // 4. Если всё ок — доступ к полному функционалу
+  // 4. Доступ к полному функционалу
   return (
     <Switch>
       <Route path="/" component={Home} />
@@ -76,14 +76,15 @@ function Router() {
       <Route path="/category/:id" component={CategoryView} />
       <Route path="/thread/:id" component={ThreadView} />
       <Route path="/user/:id" component={Profile} />
+      <Route path="/users" component={UsersList} /> {/* ДОБАВЛЕНО: Роут для списка юзеров */}
       <Route path="/admin" component={Admin} />
       
-      {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
   );
 }
 
+// ... остальной код App() остается без изменений
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
