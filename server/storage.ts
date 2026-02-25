@@ -1,8 +1,8 @@
 import { db } from "./db";
-import { pool } from "./db"; // Убедись, что pool экспортируется из db.ts
+import { pool } from "./db"; 
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, or } from "drizzle-orm";
 import {
   users, categories, threads, posts,
   type User, type Category, type Thread, type Post,
@@ -12,10 +12,7 @@ import {
 const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
-  // Хранилище сессий для Passport.js
   sessionStore: session.Store;
-  
-  // Пользователи
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -23,20 +20,14 @@ export interface IStorage {
   updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User>;
   listUsers(): Promise<SafeUser[]>;
   getUserCount(): Promise<number>;
-  
-  // Категории и треды
   getCategories(): Promise<CategoryWithThreads[]>;
   getCategory(id: number): Promise<CategoryWithThreads | undefined>;
   getThread(id: number): Promise<ThreadWithPosts | undefined>;
   createThread(thread: typeof threads.$inferInsert): Promise<Thread>;
   deleteThread(id: number): Promise<void>;
   getThreadCount(): Promise<number>;
-  
-  // Посты
   createPost(post: typeof posts.$inferInsert): Promise<Post>;
   deletePost(id: number): Promise<void>;
-  
-  // Инициализация
   seedCategories(): Promise<void>;
 }
 
@@ -44,14 +35,12 @@ export class DatabaseStorage implements IStorage {
   public sessionStore: session.Store;
 
   constructor() {
-    // Настройка хранения сессий в таблице "session" базы данных
     this.sessionStore = new PostgresSessionStore({
       pool,
       createTableIfMissing: true,
     });
   }
 
-  // --- USER METHODS ---
   async getUser(id: number): Promise<User | undefined> {
     const cleanId = Math.floor(Number(id));
     if (isNaN(cleanId)) return undefined;
@@ -59,27 +48,18 @@ export class DatabaseStorage implements IStorage {
       const [user] = await db.select().from(users).where(eq(users.id, cleanId));
       return user || undefined;
     } catch (e) {
-      console.error(`[STORAGE] Error fetching user ${cleanId}:`, e);
       return undefined;
     }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    try {
-      const [user] = await db.select().from(users).where(eq(users.username, username));
-      return user || undefined;
-    } catch (e) {
-      return undefined;
-    }
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    try {
-      const [user] = await db.select().from(users).where(eq(users.email, email));
-      return user || undefined;
-    } catch (e) {
-      return undefined;
-    }
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
   }
 
   async createUser(insertUser: typeof users.$inferInsert): Promise<User> {
@@ -89,26 +69,20 @@ export class DatabaseStorage implements IStorage {
 
   async updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User> {
     const cleanId = Math.floor(Number(id));
-    try {
-      const [user] = await db
-        .update(users)
-        .set(updates)
-        .where(eq(users.id, cleanId))
-        .returning();
-      if (!user) throw new Error(`User ${cleanId} not found`);
-      return user;
-    } catch (e) {
-      console.error(`[STORAGE] Update error for user ${cleanId}:`, e);
-      throw e;
-    }
+    const [user] = await db.update(users).set(updates).where(eq(users.id, cleanId)).returning();
+    if (!user) throw new Error(`User ${cleanId} not found`);
+    return user;
   }
 
+  // Исправленный метод: фильтруем только активных
   async listUsers(): Promise<SafeUser[]> {
-    const allUsers = await db.select().from(users);
-    return allUsers.map(u => {
-      const { passwordHash, ...safeUser } = u;
-      return safeUser as SafeUser;
-    });
+    const allUsers = await db.select().from(users).where(
+      or(
+        eq(users.status, "APPROVED"),
+        eq(users.role, "ADMIN")
+      )
+    );
+    return allUsers.map(({ passwordHash, ...safeUser }) => safeUser as SafeUser);
   }
 
   async getUserCount(): Promise<number> {
@@ -116,35 +90,24 @@ export class DatabaseStorage implements IStorage {
     return Number(count.value);
   }
 
-  // --- THREADS & CATEGORIES HELPERS ---
   private async enrichThreads(catThreads: Thread[]): Promise<any[]> {
     return await Promise.all(catThreads.map(async t => {
       const [author] = await db.select().from(users).where(eq(users.id, t.authorId));
       const [postCount] = await db.select({ value: sql<number>`count(*)` }).from(posts).where(eq(posts.threadId, t.id));
-      
-      const safeAuthor = author 
-        ? (({ passwordHash, ...s }) => s)(author) 
-        : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
-
+      const safeAuthor = author ? (({ passwordHash, ...s }) => s)(author) : null;
       return {
         ...t,
-        author: safeAuthor as SafeUser,
+        author: safeAuthor,
         replyCount: Math.max(0, Number(postCount.value) - 1)
       };
     }));
   }
 
-  // --- CATEGORY METHODS ---
   async getCategories(): Promise<CategoryWithThreads[]> {
     const allCategories = await db.select().from(categories).orderBy(categories.position);
     const result: CategoryWithThreads[] = [];
-
     for (const cat of allCategories) {
-      const catThreads = await db.select().from(threads)
-        .where(eq(threads.categoryId, cat.id))
-        .orderBy(desc(threads.createdAt))
-        .limit(5);
-
+      const catThreads = await db.select().from(threads).where(eq(threads.categoryId, cat.id)).orderBy(desc(threads.createdAt)).limit(5);
       const enrichedThreads = await this.enrichThreads(catThreads);
       result.push({ ...cat, threads: enrichedThreads });
     }
@@ -152,47 +115,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCategory(id: number): Promise<CategoryWithThreads | undefined> {
-    const cleanId = Math.floor(Number(id));
-    const [cat] = await db.select().from(categories).where(eq(categories.id, cleanId));
+    const [cat] = await db.select().from(categories).where(eq(categories.id, id));
     if (!cat) return undefined;
-
-    const catThreads = await db.select().from(threads)
-      .where(eq(threads.categoryId, cat.id))
-      .orderBy(desc(threads.createdAt));
-
+    const catThreads = await db.select().from(threads).where(eq(threads.categoryId, cat.id)).orderBy(desc(threads.createdAt));
     const enrichedThreads = await this.enrichThreads(catThreads);
     return { ...cat, threads: enrichedThreads };
   }
 
-  // --- THREAD METHODS ---
   async getThread(id: number): Promise<ThreadWithPosts | undefined> {
-    const cleanId = Math.floor(Number(id));
-    const [thread] = await db.select().from(threads).where(eq(threads.id, cleanId));
+    const [thread] = await db.select().from(threads).where(eq(threads.id, id));
     if (!thread) return undefined;
-
     const [author] = await db.select().from(users).where(eq(users.id, thread.authorId));
     const [category] = await db.select().from(categories).where(eq(categories.id, thread.categoryId));
-    const threadPosts = await db.select().from(posts).where(eq(posts.threadId, cleanId)).orderBy(posts.createdAt);
-
+    const threadPosts = await db.select().from(posts).where(eq(posts.threadId, id)).orderBy(posts.createdAt);
     const enrichedPosts = await Promise.all(threadPosts.map(async p => {
       const [pAuthor] = await db.select().from(users).where(eq(users.id, p.authorId));
-      const safeAuthor = pAuthor 
-        ? (({ passwordHash, ...s }) => s)(pAuthor) 
-        : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
-      
-      return { ...p, author: safeAuthor as SafeUser };
+      return { ...p, author: pAuthor ? (({ passwordHash, ...s }) => s)(pAuthor) : null };
     }));
-
-    const safeAuthor = author 
-      ? (({ passwordHash, ...s }) => s)(author) 
-      : { username: "Ghost", id: 0, role: "MEMBER", status: "APPROVED" };
-
     return {
       ...thread,
-      author: safeAuthor as SafeUser,
+      author: author ? (({ passwordHash, ...s }) => s)(author) : null,
       category,
-      replyCount: Math.max(0, threadPosts.length - 1),
-      posts: enrichedPosts
+      posts: enrichedPosts,
+      replyCount: Math.max(0, threadPosts.length - 1)
     };
   }
 
@@ -210,7 +155,6 @@ export class DatabaseStorage implements IStorage {
     return Number(count.value);
   }
 
-  // --- POST METHODS ---
   async createPost(insertPost: typeof posts.$inferInsert): Promise<Post> {
     const [post] = await db.insert(posts).values(insertPost).returning();
     return post;
@@ -220,7 +164,6 @@ export class DatabaseStorage implements IStorage {
     await db.delete(posts).where(eq(posts.id, id));
   }
 
-  // --- SEEDING ---
   async seedCategories(): Promise<void> {
     const existing = await db.select().from(categories);
     if (existing.length === 0) {
