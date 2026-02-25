@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "./ui/cyber-components";
 import { leet } from "@/lib/leet";
-import { Terminal, ShieldAlert, LogOut, User as UserIcon } from "lucide-react";
+import { Terminal, ShieldAlert, LogOut, User as UserIcon, Users } from "lucide-react";
 import { motion } from "framer-motion";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -14,11 +14,30 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-border bg-card/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 text-primary hover:text-primary/80 transition-colors group">
-            <Terminal className="w-6 h-6 group-hover:animate-pulse" />
-            <span className="font-display font-bold text-xl tracking-widest">{leet("I-SWEA")}</span>
-          </Link>
+          
+          {/* Левая часть: Логотип + Ссылка на юзеров */}
+          <div className="flex items-center gap-6">
+            <Link href="/">
+              <a className="flex items-center gap-3 text-primary hover:text-primary/80 transition-colors group cursor-pointer">
+                <Terminal className="w-6 h-6 group-hover:animate-pulse" />
+                <span className="font-display font-bold text-xl tracking-widest">{leet("I-SWEA")}</span>
+              </a>
+            </Link>
 
+            {/* Вкладка ENTITIES (появится справа от лого) */}
+            <Link href="/users">
+              <a className={`flex items-center gap-2 text-[10px] font-mono tracking-[0.2em] px-3 py-1 border transition-all cursor-pointer uppercase ${
+                location === "/users" 
+                  ? "border-primary bg-primary/20 text-primary shadow-[0_0_10px_rgba(0,255,159,0.2)]" 
+                  : "border-primary/20 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5"
+              }`}>
+                <Users className="w-3 h-3" />
+                {leet("ENTITIES")}
+              </a>
+            </Link>
+          </div>
+
+          {/* Правая часть: Навигация профиля */}
           <nav className="flex items-center gap-4">
             {user ? (
               <>
@@ -48,6 +67,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             )}
           </nav>
         </div>
+        
         {/* Glowing bottom border effect */}
         <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-primary to-transparent opacity-50" />
       </header>
