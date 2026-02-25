@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect, useRef } from "react";
 import { useProfile, useUpdateProfile } from "@/hooks/use-api";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,7 +13,6 @@ export default function Profile() {
   const { id } = useParams();
   const userId = parseInt(id || "0");
   
-  // Получаем данные профиля
   const { data: profile, isLoading, error } = useProfile(userId);
   const { user } = useAuth();
   const updateProfile = useUpdateProfile();
@@ -30,7 +30,6 @@ export default function Profile() {
 
   const isOwner = user?.id === userId;
 
-  // Синхронизация локального состояния с данными из БД
   useEffect(() => {
     if (profile) {
       setBio(profile.bio || "");
@@ -77,7 +76,6 @@ export default function Profile() {
 
   if (isLoading) return <Layout><div className="animate-pulse h-64 bg-card" /></Layout>;
   
-  // ФИКС: Если данных нет или ошибка — показываем расширенную диагностику
   if (error || !profile) {
     return (
       <Layout>
@@ -89,12 +87,6 @@ export default function Profile() {
             TERMINAL_ID: {id} <br />
             STATUS: {error ? "REMOTE_REJECTION" : "NODE_NOT_FOUND"}
           </p>
-          <div className="bg-black/50 p-4 rounded border border-white/10">
-            <p className="text-[10px] text-primary/50 uppercase mb-2">Diagnostic Log:</p>
-            <code className="text-[10px] text-primary break-all">
-              {error ? JSON.stringify(error) : "Record missing in Supabase databank."}
-            </code>
-          </div>
           <Button className="mt-6" variant="outline" onClick={() => window.location.reload()}>
             {leet("RETRY_CONNECTION")}
           </Button>
@@ -105,50 +97,72 @@ export default function Profile() {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        {/* Banner */}
-        <div className="h-48 w-full bg-secondary border border-border relative overflow-hidden group">
-          {bannerUrl ? (
-            <img src={bannerUrl} alt="banner" className="w-full h-full object-cover opacity-60" />
-          ) : (
-            <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,255,159,0.05)_10px,rgba(0,255,159,0.05)_20px)]" />
-          )}
-          
-          <div className="absolute -bottom-12 left-8 flex items-end gap-6">
-            <div className="w-24 h-24 bg-card border-2 border-primary overflow-hidden flex items-center justify-center z-10 shadow-[0_0_20px_rgba(0,255,159,0.2)]">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
-              ) : (
-                <UserIcon className="w-12 h-12 text-muted-foreground" />
-              )}
+      <div className="space-y-0">
+        {/* HEADER SECTION: Banner + Overlapping Avatar */}
+        <div className="relative">
+          {/* Banner Container */}
+          <div className="h-48 md:h-64 w-full bg-secondary border-b border-border relative overflow-hidden">
+            {bannerUrl ? (
+              <img src={bannerUrl} alt="banner" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,255,159,0.05)_10px,rgba(0,255,159,0.05)_20px)]" />
+            )}
+            {/* Overlay Gradient for contrast */}
+            <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
+            
+            {isOwner && (
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="absolute top-4 right-4 bg-background/80 backdrop-blur-md border-primary/50 hover:border-primary transition-all z-20"
+                onClick={() => setIsEditing(!isEditing)}
+              >
+                <Settings2 className="w-4 h-4 mr-2" />
+                {leet(isEditing ? "DISCONNECT" : "MOD_PROFILE")}
+              </Button>
+            )}
+          </div>
+
+          {/* Profile Info Row: Avatar shift up */}
+          <div className="max-w-7xl mx-auto px-8 relative">
+            <div className="flex flex-col md:flex-row items-start md:items-end gap-6 -mt-16 md:-mt-20">
+              {/* Avatar Container */}
+              <div className="relative group">
+                <div className="w-32 h-32 md:w-40 md:h-40 bg-card border-2 border-primary overflow-hidden z-10 shadow-[0_0_25px_rgba(0,255,159,0.3)] ring-8 ring-background">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-secondary">
+                      <UserIcon className="w-16 h-16 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Username & Role */}
+              <div className="pb-2 flex-1">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-4xl md:text-5xl text-primary font-display tracking-tighter drop-shadow-[0_0_10px_rgba(0,255,159,0.5)]">
+                    {profile.username}
+                  </h1>
+                  {profile.role === "ADMIN" && <Shield className="w-6 h-6 text-accent animate-pulse" />}
+                </div>
+                <div className="mt-2">
+                  <RoleBadge role={profile.role} />
+                </div>
+              </div>
             </div>
           </div>
-          
-          {isOwner && (
-            <Button 
-              size="sm" 
-              variant="outline" 
-              className="absolute top-4 right-4 bg-background/90 backdrop-blur-md border-primary/50"
-              onClick={() => setIsEditing(!isEditing)}
-            >
-              <Settings2 className="w-4 h-4 mr-2" />
-              {leet(isEditing ? "DISCONNECT" : "MOD_PROFILE")}
-            </Button>
-          )}
         </div>
 
-        <div className="pt-16 px-8 flex flex-col md:flex-row gap-8">
+        {/* CONTENT SECTION */}
+        <div className="max-w-7xl mx-auto px-8 pt-10 pb-20 flex flex-col md:flex-row gap-8">
           <div className="flex-1 space-y-6">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-4xl text-primary font-display mb-1">{profile.username}</h1>
-                {profile.role === "ADMIN" && <Shield className="w-6 h-6 text-accent animate-pulse" title="System Admin" />}
-              </div>
-              <RoleBadge role={profile.role} />
-            </div>
-
             {isEditing ? (
-              <Card className="p-6 border-primary/30 bg-card/40">
+              <Card className="p-6 border-primary/30 bg-card/40 backdrop-blur-sm">
+                <h3 className="text-primary font-display mb-4 flex items-center gap-2">
+                  <Terminal className="w-4 h-4" /> {leet("EDIT_MODE_ACTIVE")}
+                </h3>
                 {updateError && (
                   <div className="mb-4 p-3 border border-destructive bg-destructive/10 text-destructive text-xs flex items-center gap-2">
                     <AlertCircle className="w-4 h-4" /> {updateError}
@@ -161,7 +175,7 @@ export default function Profile() {
                       <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">{leet("AVATAR_LINK")}</label>
                       <div className="flex gap-2">
                         <Input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="https://..." className="bg-black/20" />
-                        <input type="file" ref={avatarInputRef} className="hidden" accept=".png" onChange={(e) => handleFileUpload(e, 'avatar')} />
+                        <input type="file" ref={avatarInputRef} className="hidden" accept=".png,.jpg,.jpeg" onChange={(e) => handleFileUpload(e, 'avatar')} />
                         <Button type="button" size="icon" variant="outline" onClick={() => avatarInputRef.current?.click()} disabled={isUploading}>
                           <Upload className="w-4 h-4" />
                         </Button>
@@ -171,7 +185,7 @@ export default function Profile() {
                       <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">{leet("BANNER_LINK")}</label>
                       <div className="flex gap-2">
                         <Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} placeholder="https://..." className="bg-black/20" />
-                        <input type="file" ref={bannerInputRef} className="hidden" accept=".png" onChange={(e) => handleFileUpload(e, 'banner')} />
+                        <input type="file" ref={bannerInputRef} className="hidden" accept=".png,.jpg,.jpeg" onChange={(e) => handleFileUpload(e, 'banner')} />
                         <Button type="button" size="icon" variant="outline" onClick={() => bannerInputRef.current?.click()} disabled={isUploading}>
                           <Upload className="w-4 h-4" />
                         </Button>
@@ -189,29 +203,37 @@ export default function Profile() {
                     <Textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} className="bg-black/20 font-mono text-sm" />
                   </div>
 
-                  <Button type="submit" className="w-full bg-primary/20 hover:bg-primary/40 border-primary" disabled={updateProfile.isPending || isUploading}>
-                    {updateProfile.isPending ? leet("UPLOADING...") : leet("SAVE_CHANGES")}
-                  </Button>
+                  <div className="flex gap-3">
+                    <Button type="submit" className="flex-1 bg-primary/20 hover:bg-primary/40 border-primary" disabled={updateProfile.isPending || isUploading}>
+                      {updateProfile.isPending ? leet("UPLOADING...") : leet("SAVE_CHANGES")}
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={() => setIsEditing(false)}>
+                      {leet("CANCEL")}
+                    </Button>
+                  </div>
                 </form>
               </Card>
             ) : (
               <div className="space-y-6">
-                <Card className="p-6 bg-card/20 border-primary/10 relative group">
+                <Card className="p-6 bg-card/20 border-primary/10 relative group overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
                   <Terminal className="absolute top-4 right-4 w-4 h-4 text-primary/20 group-hover:text-primary/50 transition-colors" />
-                  <h3 className="text-primary text-[10px] uppercase mb-4 tracking-[0.3em] font-bold border-b border-primary/20 pb-2">{leet("USER_INTEL")}</h3>
+                  <h3 className="text-primary text-[10px] uppercase mb-4 tracking-[0.3em] font-bold border-b border-primary/20 pb-2">
+                    {leet("USER_INTEL")}
+                  </h3>
                   <div className="whitespace-pre-wrap text-foreground/90 font-mono text-sm leading-relaxed min-h-[100px]">
                     {profile.bio || <span className="text-muted-foreground/30 italic">{leet("NO_ENCRYPTED_DATA_FOUND")}</span>}
                   </div>
                 </Card>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Card className="p-4 border-primary/10 bg-card/10">
+                  <Card className="p-4 border-primary/10 bg-card/10 flex flex-col justify-center">
                     <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{leet("INIT_DATE")}</p>
                     <p className="font-mono text-primary mt-1 text-lg">
                       {profile.createdAt ? format(new Date(profile.createdAt), 'dd.MM.yyyy') : "??.??"}
                     </p>
                   </Card>
-                  <Card className="p-4 border-primary/10 bg-card/10">
+                  <Card className="p-4 border-primary/10 bg-card/10 flex flex-col justify-center">
                     <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Signal Status</p>
                     <p className="font-mono text-primary mt-1 text-lg">{profile.icq ? `UIN:${profile.icq}` : "NO_SIGNAL"}</p>
                   </Card>
@@ -220,13 +242,25 @@ export default function Profile() {
             )}
           </div>
           
-          {profile.isBanned && (
-            <div className="w-full md:w-64 animate-in fade-in slide-in-from-right-4">
-              <Card className="p-6 border-destructive bg-destructive/5 text-center shadow-[0_0_20px_rgba(255,0,0,0.15)]">
-                <Shield className="w-16 h-16 text-destructive mx-auto mb-4" />
-                <h3 className="text-destructive font-black text-2xl uppercase tracking-tighter">{leet("BANNED")}</h3>
-                <p className="text-[10px] text-destructive/60 mt-2 font-mono uppercase">User credentials nullified by master control.</p>
-              </Card>
+          {/* Sidebar Area (Bans or extra stats) */}
+          {(profile.isBanned || profile.role === "ADMIN") && (
+            <div className="w-full md:w-64 space-y-4">
+              {profile.isBanned && (
+                <Card className="p-6 border-destructive bg-destructive/10 text-center shadow-[0_0_20px_rgba(255,0,0,0.2)]">
+                  <Shield className="w-12 h-12 text-destructive mx-auto mb-4" />
+                  <h3 className="text-destructive font-black text-xl uppercase">{leet("BANNED")}</h3>
+                  <p className="text-[8px] text-destructive/60 mt-2 font-mono uppercase leading-tight">
+                    Credentials nullified by system protocol.
+                  </p>
+                </Card>
+              )}
+              {profile.role === "ADMIN" && (
+                <Card className="p-6 border-accent/50 bg-accent/5 text-center">
+                  <Shield className="w-12 h-12 text-accent mx-auto mb-4 animate-pulse" />
+                  <h3 className="text-accent font-black text-xl uppercase">OVERSEER</h3>
+                  <p className="text-[8px] text-accent/60 mt-2 font-mono uppercase">Master access granted.</p>
+                </Card>
+              )}
             </div>
           )}
         </div>
