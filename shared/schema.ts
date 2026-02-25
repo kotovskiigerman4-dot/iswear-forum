@@ -7,12 +7,12 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  // Убрали .unique(), чтобы билд не вис на вопросе о констрейнтах
   username: text("username").notNull(), 
   email: text("email").notNull(),
   icq: text("icq"),
   passwordHash: text("password_hash").notNull(),
-  role: text("role", { enum: ["ADMIN", "MODERATOR", "OLDGEN", "MEMBER"] }).default("MEMBER").notNull(),
+  // Добавлена роль USER для совместимости с логикой роутов
+  role: text("role", { enum: ["ADMIN", "MODERATOR", "OLDGEN", "MEMBER", "USER"] }).default("MEMBER").notNull(),
   status: text("status", { enum: ["PENDING", "APPROVED", "REJECTED"] }).default("PENDING").notNull(),
   applicationReason: text("application_reason").notNull(), 
   avatarUrl: text("avatar_url"),
@@ -20,11 +20,14 @@ export const users = pgTable("users", {
   bio: text("bio"),
   isBanned: boolean("is_banned").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Новые поля для статистики и онлайна
+  views: integer("views").default(0).notNull(),
+  lastSeen: timestamp("last_seen").defaultNow().notNull(),
 });
 
 export const categories = pgTable("categories", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(), // Здесь оставляем, если это было раньше
+  name: text("name").notNull().unique(),
   description: text("description"),
   position: integer("position").notNull().default(0),
   pinnedMessage: text("pinned_message"),
@@ -92,7 +95,9 @@ export const insertUserSchema = createInsertSchema(users).omit({
   passwordHash: true,
   role: true,
   status: true,
-  isBanned: true 
+  isBanned: true,
+  views: true,
+  lastSeen: true
 });
 
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
@@ -152,7 +157,7 @@ export type UpdateProfileRequest = {
 };
 
 export type AdminUpdateUserRequest = {
-  role?: "ADMIN" | "MODERATOR" | "OLDGEN" | "MEMBER";
+  role?: "ADMIN" | "MODERATOR" | "OLDGEN" | "MEMBER" | "USER";
   status?: "PENDING" | "APPROVED" | "REJECTED";
   isBanned?: boolean;
 };
