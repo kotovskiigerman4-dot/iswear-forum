@@ -33,6 +33,7 @@ export interface IStorage {
   deleteThread(id: number): Promise<void>;
   getThreadCount(): Promise<number>;
   createPost(post: typeof posts.$inferInsert): Promise<Post>;
+  getPost(id: number): Promise<Post | undefined>; // Добавлено для проверки прав
   deletePost(id: number): Promise<void>;
   seedCategories(): Promise<void>;
 }
@@ -102,7 +103,7 @@ export class DatabaseStorage implements IStorage {
   async updateLastSeen(userId: number): Promise<void> {
     const cleanId = Math.floor(Number(userId));
     await db.update(users)
-      .set({ lastSeen: new Date() }) // Drizzle автоматически свяжет это с last_seen
+      .set({ lastSeen: new Date() })
       .where(eq(users.id, cleanId));
   }
 
@@ -180,7 +181,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteThread(id: number): Promise<void> {
-    await db.delete(threads).where(eq(threads.id, id));
+    const cleanId = Math.floor(Number(id));
+    // Сначала удаляем все посты треда (ручное каскадное удаление для надежности)
+    await db.delete(posts).where(eq(posts.threadId, cleanId));
+    await db.delete(threads).where(eq(threads.id, cleanId));
   }
 
   async getThreadCount(): Promise<number> {
@@ -193,8 +197,16 @@ export class DatabaseStorage implements IStorage {
     return post;
   }
 
+  // Метод получения конкретного поста (нужен для логики удаления в роутах)
+  async getPost(id: number): Promise<Post | undefined> {
+    const cleanId = Math.floor(Number(id));
+    const [post] = await db.select().from(posts).where(eq(posts.id, cleanId));
+    return post || undefined;
+  }
+
   async deletePost(id: number): Promise<void> {
-    await db.delete(posts).where(eq(posts.id, id));
+    const cleanId = Math.floor(Number(id));
+    await db.delete(posts).where(eq(posts.id, cleanId));
   }
 
   async seedCategories(): Promise<void> {
