@@ -20,6 +20,7 @@ export interface IStorage {
   updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User>;
   listUsers(): Promise<SafeUser[]>;
   getUserCount(): Promise<number>;
+  getPendingUsersCount(): Promise<number>; // Новое: для счетчика заявок
   getCategories(): Promise<CategoryWithThreads[]>;
   getCategory(id: number): Promise<CategoryWithThreads | undefined>;
   getThread(id: number): Promise<ThreadWithPosts | undefined>;
@@ -74,19 +75,24 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // Исправленный метод: фильтруем только активных
+  /**
+   * ИСПРАВЛЕНО: Теперь возвращает всех пользователей без фильтрации.
+   * Фильтрация (кому показывать только APPROVED) теперь должна происходить в routes.ts
+   */
   async listUsers(): Promise<SafeUser[]> {
-    const allUsers = await db.select().from(users).where(
-      or(
-        eq(users.status, "APPROVED"),
-        eq(users.role, "ADMIN")
-      )
-    );
+    const allUsers = await db.select().from(users);
     return allUsers.map(({ passwordHash, ...safeUser }) => safeUser as SafeUser);
   }
 
   async getUserCount(): Promise<number> {
     const [count] = await db.select({ value: sql<number>`count(*)` }).from(users);
+    return Number(count.value);
+  }
+
+  async getPendingUsersCount(): Promise<number> {
+    const [count] = await db.select({ value: sql<number>`count(*)` })
+      .from(users)
+      .where(eq(users.status, "PENDING"));
     return Number(count.value);
   }
 
