@@ -7,7 +7,11 @@ import http from "http";
 
 const app = express();
 
-// Настройки безопасности (исправляют ошибку со шрифтами в консоли)
+// 1. ДОВЕРИЕ ПРОКСИ (Критично для сессий на Render)
+// Это должно стоять ПЕРЕД всеми мидлварами и авторизацией
+app.set("trust proxy", 1);
+
+// 2. Настройки безопасности CSP
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -39,13 +43,14 @@ export function log(message: string, source = "express") {
 
 (async () => {
   try {
-    // 1. Инициализация авторизации (Passport + Sessions)
+    // 3. Инициализация авторизации (Passport + Sessions)
+    // Теперь сессия будет держаться, так как мы включили trust proxy выше
     setupAuth(app);
 
-    // 2. Инициализация роутов (API и база)
+    // 4. Инициализация роутов (API и база)
     const httpServer = await registerRoutes(app);
 
-    // 3. Глобальный обработчик ошибок
+    // 5. Глобальный обработчик ошибок
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
@@ -55,7 +60,7 @@ export function log(message: string, source = "express") {
       }
     });
 
-    // 4. Статика или Vite
+    // 6. Статика или Vite
     if (process.env.NODE_ENV === "production") {
       serveStatic(app);
     } else {
