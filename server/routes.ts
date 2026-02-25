@@ -1,9 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth } from "./auth";
 import multer from "multer";
-import helmet from "helmet";
 import { createClient } from '@supabase/supabase-js';
 
 // Настройка клиента Supabase
@@ -14,35 +12,17 @@ const supabase = createClient(
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } // Увеличил до 5MB
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // 1. Безопасность и CSP (чтобы картинки из облака грузились)
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", "data:", "https:", "http:", "*.supabase.co"],
-          connectSrc: ["'self'", "https:", "wss:", "ws:", "*.supabase.co"],
-        },
-      },
-      crossOriginResourcePolicy: { policy: "cross-origin" }
-    })
-  );
+  // УДАЛЕНО: helmet и setupAuth (они уже в index.ts, не дублируй их здесь!)
 
-  // 2. Инициализация авторизации
-  setupAuth(app);
-
-  // --- API ЗАГРУЗКИ ФАЙЛОВ (SUPABASE КИЛЛЕР-ФИЧА) ---
+  // --- API ЗАГРУЗКИ ФАЙЛОВ ---
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-      // Если ключи Supabase не заданы, откатываемся на base64 (временное решение)
       if (!process.env.SUPABASE_URL) {
         const b64 = req.file.buffer.toString("base64");
         return res.json({ url: `data:${req.file.mimetype};base64,${b64}` });
@@ -52,7 +32,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${file.originalname.split('.').pop()}`;
       
       const { data, error } = await supabase.storage
-        .from('avatars') // Убедись, что бакет 'avatars' создан и он Public в Supabase!
+        .from('avatars') 
         .upload(fileName, file.buffer, { contentType: file.mimetype });
 
       if (error) throw error;
@@ -100,16 +80,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(users);
   });
 
-  // --- ФОРУМ ---
+  // --- ФОРУМ (КАТЕГОРИИ) ---
   app.get("/api/categories", async (_req, res) => {
-    const categories = await storage.getCategories();
-    res.json(categories);
+    try {
+      const categories = await storage.getCategories();
+      res.json(categories);
+    } catch (e) {
+      console.error("Error categories route:", e);
+      res.status(500).json({ message: "Failed to load categories" });
+    }
   });
 
   app.get("/api/threads/:id", async (req, res) => {
-    const thread = await storage.getThread(parseInt(req.params.id));
-    if (!thread) return res.status(404).json({ message: "Thread not found" });
-    res.json(thread);
+    try {
+      const thread = await storage.getThread(parseInt(req.params.id));
+      if (!thread) return res.status(404).json({ message: "Thread not found" });
+      res.json(thread);
+    } catch (e) {
+      res.status(500).json({ message: "Error loading thread" });
+    }
   });
 
   app.post("/api/threads", async (req, res) => {
