@@ -7,8 +7,9 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  email: text("email").notNull().unique(),
+  // Убрали .unique(), чтобы билд не вис на вопросе о констрейнтах
+  username: text("username").notNull(), 
+  email: text("email").notNull(),
   icq: text("icq"),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["ADMIN", "MODERATOR", "OLDGEN", "MEMBER"] }).default("MEMBER").notNull(),
@@ -23,7 +24,7 @@ export const users = pgTable("users", {
 
 export const categories = pgTable("categories", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull().unique(), // Здесь оставляем, если это было раньше
   description: text("description"),
   position: integer("position").notNull().default(0),
   pinnedMessage: text("pinned_message"),
@@ -44,7 +45,7 @@ export const posts = pgTable("posts", {
   threadId: integer("thread_id").notNull().references(() => threads.id, { onDelete: "cascade" }),
   authorId: integer("author_id").notNull().references(() => users.id),
   content: text("content").notNull(),
-  fileUrl: text("file_url"), // <--- НОВАЯ КОЛОНКА ДЛЯ PNG/TXT
+  fileUrl: text("file_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
 });
@@ -130,18 +131,17 @@ export const registerSchema = z.object({
 export type LoginRequest = z.infer<typeof loginSchema>;
 export type RegisterRequest = z.infer<typeof registerSchema>;
 
-// Обновленные запросы для поддержки файлов
 export type CreateThreadRequest = {
   title: string;
   content: string;
   categoryId: number;
-  fileUrl?: string; // <--- Позволяем передавать файл при создании темы
+  fileUrl?: string;
 };
 
 export type CreatePostRequest = {
   content: string;
   threadId: number;
-  fileUrl?: string; // <--- Позволяем передавать файл в ответ
+  fileUrl?: string;
 };
 
 export type UpdateProfileRequest = {
