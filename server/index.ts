@@ -8,7 +8,6 @@ import http from "http";
 const app = express();
 
 // 1. ДОВЕРИЕ ПРОКСИ (Критично для сессий на Render)
-// Это должно стоять ПЕРЕД всеми мидлварами и авторизацией
 app.set("trust proxy", 1);
 
 // 2. Настройки безопасности CSP
@@ -20,7 +19,8 @@ app.use(
         "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         "font-src": ["'self'", "https://fonts.gstatic.com"],
-        "img-src": ["'self'", "data:", "https://*.supabase.co"],
+        // ДОБАВИЛИ РАЗРЕШЕНИЕ НА ВНЕШНИЕ КАРТИНКИ (Bing и любые https для гибкости)
+        "img-src": ["'self'", "data:", "https://*.supabase.co", "https://*.bing.net", "https://*.mm.bing.net", "https:"],
         "connect-src": ["'self'", "https://*.supabase.co"],
       },
     },
@@ -43,11 +43,10 @@ export function log(message: string, source = "express") {
 
 (async () => {
   try {
-    // 3. Инициализация авторизации (Passport + Sessions)
-    // Теперь сессия будет держаться, так как мы включили trust proxy выше
+    // 3. Инициализация авторизации
     setupAuth(app);
 
-    // 4. Инициализация роутов (API и база)
+    // 4. Инициализация роутов
     const httpServer = await registerRoutes(app);
 
     // 5. Глобальный обработчик ошибок
