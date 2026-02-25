@@ -16,8 +16,6 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // УДАЛЕНО: helmet и setupAuth (они уже в index.ts, не дублируй их здесь!)
-
   // --- API ЗАГРУЗКИ ФАЙЛОВ ---
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
@@ -81,6 +79,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- ФОРУМ (КАТЕГОРИИ) ---
+  
+  // 1. Получение всех категорий для главной
   app.get("/api/categories", async (_req, res) => {
     try {
       const categories = await storage.getCategories();
@@ -91,6 +91,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 2. ИСПРАВЛЕНО: Добавлен роут для одной категории (чтобы не было NOT FOUND)
+  app.get("/api/categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid category ID" });
+
+      const category = await storage.getCategory(id);
+      if (!category) return res.status(404).json({ message: "Category not found" });
+      
+      res.json(category);
+    } catch (e) {
+      console.error("Error fetching single category:", e);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // --- ТРЕДЫ И ПОСТЫ ---
   app.get("/api/threads/:id", async (req, res) => {
     try {
       const thread = await storage.getThread(parseInt(req.params.id));
@@ -106,6 +123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const thread = await storage.createThread({
         ...req.body,
+        categoryId: parseInt(req.body.categoryId), // Важно привести к числу
         authorId: req.user.id
       });
       await storage.createPost({
@@ -125,6 +143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const post = await storage.createPost({
         ...req.body,
+        threadId: parseInt(req.body.threadId), // Приводим к числу
         authorId: req.user.id
       });
       res.json(post);
