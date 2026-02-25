@@ -1,207 +1,220 @@
-import { z } from 'zod';
-import { 
-  insertCategorySchema, 
-  insertThreadSchema, 
-  insertPostSchema,
-  loginSchema,
-  registerSchema
-} from './schema';
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import multer from "multer";
+import { createClient } from '@supabase/supabase-js';
 
-export const errorSchemas = {
-  validation: z.object({ message: z.string(), field: z.string().optional() }),
-  notFound: z.object({ message: z.string() }),
-  unauthorized: z.object({ message: z.string() }),
-  internal: z.object({ message: z.string() }),
-};
+// Настройка клиента Supabase
+const supabase = createClient(
+  process.env.SUPABASE_URL || "", 
+  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+);
 
-export const api = {
-  // --- НОВЫЙ МАРШРУТ ДЛЯ ЗАГРУЗКИ ФАЙЛОВ ---
-  upload: {
-    method: 'POST' as const,
-    path: '/api/upload' as const,
-    responses: {
-      200: z.object({ url: z.string() }),
-      400: z.object({ message: z.string() }),
-      401: errorSchemas.unauthorized,
-    }
-  },
-  auth: {
-    me: {
-      method: 'GET' as const,
-      path: '/api/auth/me' as const,
-      responses: {
-        200: z.any(), // SafeUser
-        401: errorSchemas.unauthorized,
-      },
-    },
-    login: {
-      method: 'POST' as const,
-      path: '/api/auth/login' as const,
-      input: loginSchema,
-      responses: {
-        200: z.any(), // SafeUser
-        401: errorSchemas.unauthorized,
-      },
-    },
-    register: {
-      method: 'POST' as const,
-      path: '/api/auth/register' as const,
-      input: registerSchema,
-      responses: {
-        201: z.any(), // SafeUser
-        400: errorSchemas.validation,
-      },
-    },
-    logout: {
-      method: 'POST' as const,
-      path: '/api/auth/logout' as const,
-      responses: {
-        200: z.object({ message: z.string() }),
-      },
-    }
-  },
-  categories: {
-    list: {
-      method: 'GET' as const,
-      path: '/api/categories' as const,
-      responses: {
-        200: z.array(z.any()), // CategoryWithThreads[]
-      },
-    },
-    get: {
-      method: 'GET' as const,
-      path: '/api/categories/:id' as const,
-      responses: {
-        200: z.any(), // CategoryWithThreads
-        404: errorSchemas.notFound,
-      }
-    }
-  },
-  threads: {
-    create: {
-      method: 'POST' as const,
-      path: '/api/threads' as const,
-      input: z.object({
-        title: z.string().min(1),
-        content: z.string().min(1),
-        categoryId: z.number(),
-        fileUrl: z.string().optional(), // <--- РАЗРЕШАЕМ ФАЙЛ
-      }),
-      responses: {
-        201: z.any(), // Thread
-        400: errorSchemas.validation,
-        401: errorSchemas.unauthorized,
-      },
-    },
-    get: {
-      method: 'GET' as const,
-      path: '/api/threads/:id' as const,
-      responses: {
-        200: z.any(), // ThreadWithPosts
-        404: errorSchemas.notFound,
-      },
-    },
-    delete: {
-      method: 'DELETE' as const,
-      path: '/api/threads/:id' as const,
-      responses: {
-        204: z.void(),
-        401: errorSchemas.unauthorized,
-        404: errorSchemas.notFound,
-      }
-    }
-  },
-  posts: {
-    create: {
-      method: 'POST' as const,
-      path: '/api/posts' as const,
-      input: z.object({
-        content: z.string().min(1),
-        threadId: z.number(),
-        fileUrl: z.string().optional(), // <--- РАЗРЕШАЕМ ФАЙЛ
-      }),
-      responses: {
-        201: z.any(), // Post
-        400: errorSchemas.validation,
-        401: errorSchemas.unauthorized,
-      },
-    },
-    delete: {
-      method: 'DELETE' as const,
-      path: '/api/posts/:id' as const,
-      responses: {
-        204: z.void(),
-        401: errorSchemas.unauthorized,
-        404: errorSchemas.notFound,
-      }
-    }
-  },
-  users: {
-    profile: {
-      method: 'GET' as const,
-      path: '/api/users/:id' as const,
-      responses: {
-        200: z.any(), // SafeUser
-        404: errorSchemas.notFound,
-      }
-    },
-    update: {
-      method: 'PATCH' as const,
-      path: '/api/users/:id' as const,
-      input: z.object({
-        bio: z.string().optional(),
-        avatarUrl: z.string().optional(),
-        bannerUrl: z.string().optional(),
-        icq: z.string().optional(),
-      }),
-      responses: {
-        200: z.any(), // SafeUser
-        401: errorSchemas.unauthorized,
-      }
-    },
-    list: {
-      method: 'GET' as const,
-      path: '/api/users' as const,
-      responses: {
-        200: z.array(z.any()), // SafeUser[]
-        401: errorSchemas.unauthorized,
-      }
-    },
-    adminUpdate: {
-      method: 'PATCH' as const,
-      path: '/api/users/:id/admin' as const,
-      input: z.object({
-        role: z.enum(["ADMIN", "MODERATOR", "OLDGEN", "MEMBER"]).optional(),
-        isBanned: z.boolean().optional(),
-      }),
-      responses: {
-        200: z.any(), // SafeUser
-        401: errorSchemas.unauthorized,
-      }
-    }
-  },
-  stats: {
-    get: {
-      method: 'GET' as const,
-      path: '/api/stats' as const,
-      responses: {
-        200: z.object({
-          userCount: z.number(),
-          threadCount: z.number(),
-        }),
-      }
-    }
-  }
-};
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
 
-export function buildUrl(path: string, params?: Record<string, string | number>): string {
-  let url = path;
-  if (params) {
-    Object.entries(params).forEach(([key, value]) => {
-      if (url.includes(`:${key}`)) {
-        url = url.replace(`:${key}`, String(value));
+export async function registerRoutes(app: Express): Promise<Server> {
+  // --- MIDDLEWARE: LAST SEEN ---
+  app.use((req, _res, next) => {
+    if (req.isAuthenticated() && req.user) {
+      storage.updateLastSeen(req.user.id).catch(err => {
+        console.error("Failed to update last_seen:", err);
+      });
+    }
+    next();
+  });
+
+  // --- API ЗАГРУЗКИ ФАЙЛОВ ---
+  app.post("/api/upload", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+      if (!process.env.SUPABASE_URL) {
+        const b64 = req.file.buffer.toString("base64");
+        return res.json({ url: `data:${req.file.mimetype};base64,${b64}` });
       }
+
+      const file = req.file;
+      const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${file.originalname.split('.').pop()}`;
+      
+      const { data, error } = await supabase.storage
+        .from('avatars') 
+        .upload(fileName, file.buffer, { contentType: file.mimetype });
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      res.json({ url: publicUrl });
+    } catch (e: any) {
+      console.error("Upload error:", e);
+      res.status(500).json({ message: "Upload failed: " + e.message });
+    }
+  });
+
+  // --- API ПОЛЬЗОВАТЕЛЕЙ ---
+
+  app.get("/api/users", async (_req, res) => {
+    try {
+      const allUsers = await storage.listUsers();
+      
+      const roleWeight: Record<string, number> = {
+        "ADMIN": 1, "MODERATOR": 2, "OLDGEN": 3, "MEMBER": 4, "USER": 5
+      };
+
+      const sortedUsers = allUsers.sort((a, b) => {
+        const weightA = roleWeight[a.role] || 100;
+        const weightB = roleWeight[b.role] || 100;
+        if (weightA !== weightB) return weightA - weightB;
+        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      });
+
+      const safeUsers = sortedUsers.map(({ passwordHash, email, ...user }) => user);
+      res.json(safeUsers);
+    } catch (e) {
+      res.status(500).json({ message: "Failed to fetch neural nodes" });
+    }
+  });
+
+  app.get(["/api/users/:id", "/api/profile/:id"], async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
+
+      try { await storage.incrementViewCount(id); } catch(e) {}
+
+      const user = await storage.getUser(id);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      
+      const { passwordHash, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (e) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.get("/api/users/:id/threads", async (req, res) => {
+    try {
+      const threads = await storage.getUserThreads(parseInt(req.params.id));
+      res.json(threads);
+    } catch (e) {
+      res.status(500).json({ message: "Error" });
+    }
+  });
+
+  app.patch("/api/users/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const id = parseInt(req.params.id);
+    if (req.user.id !== id && req.user.role !== "ADMIN") return res.sendStatus(403);
+    
+    try {
+      const updated = await storage.updateUser(id, req.body);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // --- АДМИНКА ---
+  
+  app.get("/api/admin/users", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user.role !== "ADMIN" && req.user.role !== "MODERATOR")) {
+      return res.sendStatus(403);
+    }
+    const users = await storage.listUsers();
+    res.json(users);
+  });
+
+  app.patch("/api/admin/users/:id", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user.role !== "ADMIN" && req.user.role !== "MODERATOR")) {
+      return res.sendStatus(403);
+    }
+    const updated = await storage.updateUser(parseInt(req.params.id), req.body);
+    res.json(updated);
+  });
+
+  // --- КАТЕГОРИИ ---
+  app.get("/api/categories", async (_req, res) => {
+    const categories = await storage.getCategories();
+    res.json(categories);
+  });
+
+  // --- ТРЕДЫ И ПОСТЫ ---
+  app.get("/api/threads/:id", async (req, res) => {
+    const thread = await storage.getThread(parseInt(req.params.id));
+    if (!thread) return res.status(404).json({ message: "Not found" });
+    res.json(thread);
+  });
+
+  app.post("/api/threads", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const thread = await storage.createThread({
+      ...req.body,
+      categoryId: parseInt(req.body.categoryId),
+      authorId: req.user.id
     });
-  }
-  return url;
+    await storage.createPost({
+      content: req.body.content || "Initial post",
+      threadId: thread.id,
+      authorId: req.user.id,
+      fileUrl: req.body.fileUrl || null
+    });
+    res.json(thread);
+  });
+
+  // УДАЛЕНИЕ ТРЕДА
+  app.delete("/api/threads/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const id = parseInt(req.params.id);
+    const thread = await storage.getThread(id);
+    if (!thread) return res.sendStatus(404);
+
+    // Удалять может автор, модератор или админ
+    const isAuthor = thread.authorId === req.user.id;
+    const isStaff = req.user.role === "ADMIN" || req.user.role === "MODERATOR";
+    
+    if (!isAuthor && !isStaff) return res.sendStatus(403);
+
+    await storage.deleteThread(id);
+    res.json({ message: "Thread deleted" });
+  });
+
+  app.post("/api/posts", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const post = await storage.createPost({
+      ...req.body,
+      threadId: parseInt(req.body.threadId),
+      authorId: req.user.id
+    });
+    res.json(post);
+  });
+
+  // УДАЛЕНИЕ ПОСТА
+  app.delete("/api/posts/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const id = parseInt(req.params.id);
+    const post = await storage.getPost(id); // Убедись, что метод getPost есть в storage
+    if (!post) return res.sendStatus(404);
+
+    const isAuthor = post.authorId === req.user.id;
+    const isStaff = req.user.role === "ADMIN" || req.user.role === "MODERATOR";
+
+    if (!isAuthor && !isStaff) return res.sendStatus(403);
+
+    await storage.deletePost(id);
+    res.json({ message: "Post deleted" });
+  });
+
+  app.get("/api/stats", async (_req, res) => {
+    const userCount = await storage.getUserCount();
+    const threadCount = await storage.getThreadCount();
+    res.json({ users: userCount, threads: threadCount });
+  });
+
+  const httpServer = createServer(app);
+  return httpServer;
 }
