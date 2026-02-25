@@ -15,26 +15,38 @@ async function hashPassword(password: string) {
 }
 
 async function comparePasswords(supplied: string, stored: string) {
-  const [hashed, salt] = stored.split(".");
-  const hashedBuf = Buffer.from(hashed, "hex");
-  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(hashedBuf, suppliedBuf);
+  try {
+    const [hashed, salt] = stored.split(".");
+    if (!hashed || !salt) return false;
+
+    const hashedBuf = Buffer.from(hashed, "hex");
+    const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+
+    // ИСПРАВЛЕНИЕ: Защита от ошибки "Input buffers must have the same byte length"
+    if (hashedBuf.length !== suppliedBuf.length) {
+      return false;
+    }
+    return timingSafeEqual(hashedBuf, suppliedBuf);
+  } catch (e) {
+    return false;
+  }
 }
 
 export function setupAuth(app: Express) {
-  // На Render ОБЯЗАТЕЛЬНО доверяем прокси для работы куки
+  // На Render ОБЯЗАТЕЛЬНО для корректной работы кук через балансировщик
   app.set("trust proxy", 1);
 
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "fallback_secret_for_dev_only",
-    resave: false,
-    saveUninitialized: false,
+    resave: true,               // ИСПРАВЛЕНО: Должно быть true для внешних хранилищ типа Postgres
+    saveUninitialized: true,    // ИСПРАВЛЕНО: Помогает инициализировать сессию на проде
     store: storage.sessionStore,
     proxy: true,
     cookie: {
-      secure: true, // Всегда true на Render (HTTPS)
+      secure: true, 
       sameSite: "lax",
       maxAge: 30 * 24 * 60 * 60 * 1000,
+      httpOnly: true,
     },
   };
 
@@ -66,7 +78,6 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // ИСПРАВЛЕНО: Добавлен префикс /auth, который ищет фронтенд
   app.post("/api/auth/register", async (req, res) => {
     try {
       const { username, password } = req.body;
@@ -93,7 +104,6 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // ИСПРАВЛЕНО: Добавлен префикс /auth
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
@@ -105,13 +115,11 @@ export function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  // ИСПРАВЛЕНО: Добавлен префикс /auth
   app.get("/api/auth/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     res.json(req.user);
   });
   
-  // Добавим логаут для полноты картины
   app.post("/api/auth/logout", (req, res, next) => {
     req.logout((err) => {
       if (err) return next(err);
