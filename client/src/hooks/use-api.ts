@@ -109,40 +109,41 @@ export function useCreatePost() {
   });
 }
 
-export function useDeletePost() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  return useMutation({
-    mutationFn: async ({ id }) => {
-      const url = buildUrl(api.posts.delete.path, { id });
-      const res = await fetch(url, { method: "DELETE", credentials: "include" });
-      if (!res.ok) throw new Error("Erase failed");
-    },
-    onSuccess: () => {
-      toast({ title: "DELETED", description: "Post erased." });
-    }
-  });
-}
+// ====================
+// USERS & ADMIN (ИСПРАВЛЕНО)
+// ====================
 
-// ====================
-// USERS & ADMIN
-// ====================
+// 1. Список для админ-панели (защищенный)
 export function useUsersList() {
   return useQuery({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/admin/users"], // Исправлен ключ
     queryFn: async () => {
-      const res = await fetch("/api/users", { credentials: "include" });
+      // Исправлен путь на /api/admin/users
+      const res = await fetch("/api/admin/users", { credentials: "include" });
       return handleResponse(res);
     },
   });
 }
 
+// 2. Публичный список юзеров для главной страницы (ТВОЙ ЗАПРОС)
+export function usePublicUsers() {
+  return useQuery({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users");
+      return handleResponse(res);
+    },
+  });
+}
+
+// 3. Обновление пользователя админом (кнопки одобрения/бана)
 export function useAdminUpdateUser() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ id, data }) => {
-      const res = await fetch(`/api/users/${id}/admin`, {
+      // Исправлен путь: на бэкенде мы сделали PATCH /api/admin/users/:id
+      const res = await fetch(`/api/admin/users/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -151,8 +152,11 @@ export function useAdminUpdateUser() {
       return handleResponse(res);
     },
     onSuccess: () => {
+      // Инвалидируем оба ключа, чтобы данные обновились везде
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "SUCCESS", description: "User updated." });
+      queryClient.invalidateQueries({ queryKey: [api.stats.get.path] });
+      toast({ title: "SUCCESS", description: "Database updated." });
     },
   });
 }
@@ -172,18 +176,14 @@ export function useStats() {
 // ====================
 export function useProfile(id: number) {
   return useQuery({
-    // Используем уникальный ключ, чтобы данные не перемешивались
     queryKey: ["/api/users/profile", id], 
     queryFn: async () => {
       const url = buildUrl("/api/users/:id", { id });
       const res = await fetch(url);
-      
-      // Если юзер не найден (404), handleResponse выбросит Error, 
-      // и в компоненте Profile сработает экран ошибки.
       return handleResponse(res);
     },
     enabled: !!id && !isNaN(id),
-    retry: 1, // Не мучаем сервер, если юзера нет
+    retry: 1,
   });
 }
 
@@ -202,7 +202,6 @@ export function useUpdateProfile() {
       return handleResponse(res);
     },
     onSuccess: (updatedUser) => {
-      // Обновляем кэш конкретного профиля
       queryClient.invalidateQueries({ queryKey: ["/api/users/profile", updatedUser.id] });
       toast({ title: "UPDATED", description: "Profile saved." });
     }
