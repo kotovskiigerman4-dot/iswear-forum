@@ -1,5 +1,4 @@
 // @ts-nocheck
-
 export const api = {
   auth: {
     me: { path: "/api/user", method: "GET" },
@@ -26,33 +25,41 @@ export const api = {
   users: {
     list: { path: "/api/users", method: "GET" },
     get: { path: "/api/users/:id", method: "GET" },
-    getByName: { path: "/api/users/by-name/:username", method: "GET" },
   },
-  profile: {
-    get: { path: "/api/profile/:id", method: "GET" },
-    changePassword: { path: "/api/user/change-password", method: "POST" },
+  // ЭТОГО НЕ ХВАТАЛО ДЛЯ ТВОЕГО use-api.ts:
+  stats: {
+    get: { path: "/api/stats", method: "GET" },
+  },
+  search: {
+    list: { path: "/api/search", method: "GET" },
+  },
+  notifications: {
+    list: { path: "/api/notifications", method: "GET" },
   }
 };
 
 /**
- * Умный сборщик URL. 
- * Если видит :id или :username в пути — заменяет их на реальные значения из params.
+ * Универсальный сборщик URL для фронтенда
  */
 export function buildUrl(apiRoute, params) {
-  let url = typeof apiRoute === 'string' ? apiRoute : apiRoute.path;
+  // Если передана строка (как в useProfile), используем её напрямую
+  let url = typeof apiRoute === 'string' ? apiRoute : (apiRoute?.path || "");
   
+  if (!url) return "/api/undefined-route";
+
   if (params) {
-    // Заменяем именованные параметры :id, :username и т.д.
+    // 1. Заменяем динамические части пути (:id, :username)
     Object.entries(params).forEach(([key, value]) => {
       if (url.includes(`:${key}`)) {
         url = url.replace(`:${key}`, encodeURIComponent(String(value)));
       }
     });
 
-    // Добавляем остальные параметры как Query String (например, ?threadId=5)
+    // 2. Добавляем остальные параметры как Query String
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (!apiRoute.path?.includes(`:${key}`) && key !== 'id' && value !== undefined) {
+      // Добавляем в query только то, что не ушло в путь
+      if (!url.includes(encodeURIComponent(String(value))) && key !== 'id' && value !== undefined) {
         queryParams.append(key, String(value));
       }
     });
