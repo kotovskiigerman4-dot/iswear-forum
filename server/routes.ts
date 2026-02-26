@@ -20,10 +20,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
 
-  // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ (ДОБАВЛЕНО) ---
+  // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ ---
   
-  // Получение конкретного профиля
-  app.get("/api/users/:id", async (req, res) => {
+  // ФИКС: Добавляем роут /api/profile/:id (который запрашивает твой фронтенд)
+  app.get("/api/profile/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
@@ -31,10 +31,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.getUser(id);
       if (!user) return res.status(404).json({ message: "U53R_N07_F0UND" });
 
-      // Безопасная отправка данных (без хеша пароля)
       const { passwordHash, ...safeUser } = user;
       
-      // Маппинг полей для фронтенда (snake_case -> camelCase)
       res.json({
         ...safeUser,
         avatarUrl: user.avatarUrl || user.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${user.username}`,
@@ -46,21 +44,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Список всех пользователей (для страницы Users)
-  app.get("/api/users", async (req, res) => {
-    const users = await storage.listUsers();
-    // Отдаем только безопасные данные
-    const safeUsers = users.map(({ passwordHash, ...u }) => ({
-        ...u,
-        avatarUrl: u.avatarUrl || u.avatar_url
-    }));
-    res.json(safeUsers);
+  // ФИКС: Добавляем роут для тредов пользователя в профиле
+  app.get("/api/users/:id/threads", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const threads = await storage.getUserThreads(id);
+      res.json(threads);
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching user threads" });
+    }
   });
 
-  // --- ТРЕДЫ (ДОБАВЛЕНО СОЗДАНИЕ) ---
+  // Получение конкретного профиля (дублируем для совместимости с /api/users/:id)
+  app.get("/api/users/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const user = await storage.getUser(id);
+      if (!user) return res.status(404).json({ message: "U53R_N07_F0UND" });
+      const { passwordHash, ...safeUser } = user;
+      res.json({
+        ...safeUser,
+        avatarUrl: user.avatarUrl || user.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${user.username}`,
+        applicationReason: user.applicationReason || user.application_reason,
+        lastSeen: user.lastSeen || user.last_seen
+      });
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching user" });
+    }
+  });
+
+  // Список всех пользователей (страница Users) - Исправляем "кривую" таблицу
+  app.get("/api/users", async (req, res) => {
+    try {
+      const users = await storage.listUsers();
+      const safeUsers = users.map(u => ({
+          ...u,
+          avatarUrl: u.avatarUrl || u.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${u.username}`,
+          lastSeen: u.lastSeen || u.last_seen
+      }));
+      res.json(safeUsers);
+    } catch (e) {
+      res.status(500).json({ message: "Error listing users" });
+    }
+  });
+
+  // --- ТРЕДЫ ---
   app.post("/api/threads", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
     try {
       const thread = await storage.createThread({
         ...req.body,
@@ -68,7 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       res.status(201).json(thread);
     } catch (e) {
-      res.status(400).json({ message: "Failed to create thread. Check categoryId." });
+      res.status(400).json({ message: "Failed to create thread" });
     }
   });
 
@@ -83,11 +115,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!isStaff(req)) return res.sendStatus(403);
     const id = parseInt(req.params.id);
     const updateData = { ...req.body };
-
     if (!isAdmin(req) && updateData.role) {
       delete updateData.role;
     }
-
     try {
       const updated = await storage.updateUser(id, updateData);
       res.json(updated);
@@ -110,7 +140,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (catByName) return res.json(catByName);
       return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
     }
-
     const category = await storage.getCategory(id);
     if (!category) return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
     res.json(category);
@@ -128,11 +157,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const id = parseInt(req.params.id);
     const thread = await storage.getThread(id);
     if (!thread) return res.sendStatus(404);
-
     if (!isStaff(req) && thread.authorId !== req.user.id) {
       return res.sendStatus(403);
     }
-
     await storage.deleteThread(id);
     res.sendStatus(204);
   });
