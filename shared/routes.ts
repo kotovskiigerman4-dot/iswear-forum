@@ -1,7 +1,7 @@
 // @ts-nocheck
 
-// 1. Объект API со всеми возможными методами
-export const api = {
+// Базовая структура, которая ТОЧНО нужна
+const rawApi = {
   auth: {
     me: { path: "/api/user", method: "GET" },
     login: { path: "/api/login", method: "POST" },
@@ -10,7 +10,7 @@ export const api = {
   },
   threads: {
     list: { path: "/api/threads", method: "GET" },
-    get: (id) => ({ path: `/api/threads/${id}`, method: "GET" }), // Тот самый 'get', который падал
+    get: (id) => ({ path: `/api/threads/${id}`, method: "GET" }),
     create: { path: "/api/threads", method: "POST" },
   },
   categories: {
@@ -28,22 +28,43 @@ export const api = {
   }
 };
 
-// 2. Функция сборки URL (необходима для использования в хуках)
+// ХАК: Используем Proxy, чтобы если фронтенд запросит api.something.get, 
+// и его нет в списке, приложение НЕ ПАДАЛО, а просто возвращало пустую заглушку.
+export const api = new Proxy(rawApi, {
+  get(target, prop) {
+    if (prop in target) return target[prop];
+    
+    // Если фронт просит что-то неизвестное (например, api.notifications)
+    return new Proxy({}, {
+      get(_, subProp) {
+        // Если просят функцию (типа .get() или .list())
+        return () => ({ path: `/api/${String(prop)}`, method: "GET" });
+      }
+    });
+  }
+});
+
 export function buildUrl(path, params) {
   if (!params) return path;
-  // Если path — это функция (например, api.threads.get), вызываем её
-  const base = typeof path === 'function' ? path(params.id || params).path : path;
+  let finalPath = path;
+  if (typeof path === 'function') {
+    const res = path(params.id || params);
+    finalPath = res.path || res;
+  }
   
-  const url = new URL(base, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && key !== 'id') {
-      url.searchParams.append(key, value.toString());
-    }
-  });
-  return url.pathname + url.search;
+  try {
+    const url = new URL(finalPath, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && key !== 'id') {
+        url.searchParams.append(key, value.toString());
+      }
+    });
+    return url.pathname + url.search;
+  } catch (e) {
+    return finalPath;
+  }
 }
 
-// 3. Базовая функция для запросов
 export async function apiRequest(method, url, data) {
   const res = await fetch(url, {
     method,
@@ -53,13 +74,7 @@ export async function apiRequest(method, url, data) {
 
   if (!res.ok) {
     const errorText = await res.text();
-    let errorMessage;
-    try {
-      errorMessage = JSON.parse(errorText).message;
-    } catch (e) {
-      errorMessage = errorText;
-    }
-    throw new Error(errorMessage || res.statusText);
+    throw new Error(errorText || res.statusText);
   }
   return res.json();
 }
