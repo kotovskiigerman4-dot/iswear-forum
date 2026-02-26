@@ -1,9 +1,10 @@
 // @ts-nocheck
 /**
- * Этот файл теперь содержит ТОЛЬКО клиентские утилиты.
- * Билд не упадет, так как тут нет storage и multer.
+ * Этот файл - мост между фронтендом и бэкендом.
+ * Здесь ТОЛЬКО легкие функции, которые понимает браузер.
  */
 
+// Функция для выполнения запросов (её ищет use-auth.tsx)
 export async function api<T>(
   url: string,
   options?: RequestInit
@@ -24,6 +25,7 @@ export async function api<T>(
   return res.json();
 }
 
+// Утилита для сборки ссылок (её ищет use-api.ts)
 export function buildUrl(path: string, params?: Record<string, string | number | undefined>): string {
   const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
   const url = new URL(path, base);
