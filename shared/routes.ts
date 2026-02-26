@@ -1,9 +1,4 @@
 // @ts-nocheck
-/**
- * ПОЛНЫЙ SHARED ROUTES
- * Решает ошибку "reading 'list'" и "reading 'me'"
- */
-
 export const api = {
   auth: {
     me: { path: "/api/user", method: "GET" },
@@ -11,17 +6,16 @@ export const api = {
     logout: { path: "/api/logout", method: "POST" },
     register: { path: "/api/register", method: "POST" },
   },
-  // Добавляем заглушки для всех остальных вызовов, чтобы фронт не падал
   threads: {
     list: { path: "/api/threads", method: "GET" },
-    get: (id: number) => ({ path: `/api/threads/${id}`, method: "GET" }),
+    get: (id) => ({ path: `/api/threads/${id}`, method: "GET" }),
     create: { path: "/api/threads", method: "POST" },
   },
   categories: {
     list: { path: "/api/categories", method: "GET" },
   },
   posts: {
-    list: (threadId: number) => ({ path: `/api/posts?threadId=${threadId}`, method: "GET" }),
+    list: (threadId) => ({ path: `/api/posts?threadId=${threadId}`, method: "GET" }),
     create: { path: "/api/posts", method: "POST" },
   },
   users: {
@@ -29,8 +23,19 @@ export const api = {
   }
 };
 
-// Функция для запросов, если она используется в use-api.ts
-export async function apiRequest(method: string, url: string, data?: any) {
+// ЭТОЙ ФУНКЦИИ НЕ ХВАТАЛО:
+export function buildUrl(path, params) {
+  if (!params) return path;
+  const url = new URL(path, window.location.origin);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      url.searchParams.append(key, value.toString());
+    }
+  });
+  return url.pathname + url.search;
+}
+
+export async function apiRequest(method, url, data) {
   const res = await fetch(url, {
     method,
     headers: { "Content-Type": "application/json" },
