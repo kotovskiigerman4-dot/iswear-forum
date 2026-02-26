@@ -9,48 +9,61 @@ export const api = {
   },
   threads: {
     list: { path: "/api/threads", method: "GET" },
-    get: (id) => ({ path: `/api/threads/${id}`, method: "GET" }),
+    get: { path: "/api/threads/:id", method: "GET" },
     create: { path: "/api/threads", method: "POST" },
-    delete: (id) => ({ path: `/api/threads/${id}`, method: "DELETE" }),
+    delete: { path: "/api/threads/:id", method: "DELETE" },
   },
   categories: {
     list: { path: "/api/categories", method: "GET" },
-    get: (id) => ({ path: `/api/categories/${id}`, method: "GET" }),
+    get: { path: "/api/categories/:id", method: "GET" },
   },
   posts: {
-    list: (threadId) => ({ path: `/api/posts?threadId=${threadId}`, method: "GET" }),
-    get: (id) => ({ path: `/api/posts/${id}`, method: "GET" }),
+    list: { path: "/api/posts", method: "GET" },
+    get: { path: "/api/posts/:id", method: "GET" },
     create: { path: "/api/posts", method: "POST" },
-    delete: (id) => ({ path: `/api/posts/${id}`, method: "DELETE" }),
+    delete: { path: "/api/posts/:id", method: "DELETE" },
   },
-  // ЭТО ТО, ЧТО ПОЧИНИТ АДМИНКУ И ПРОФИЛИ:
   users: {
     list: { path: "/api/users", method: "GET" },
-    get: (id) => ({ path: `/api/users/${id}`, method: "GET" }),
-    getByName: (username) => ({ path: `/api/users/by-name/${username}`, method: "GET" }),
-    updateRole: (id) => ({ path: `/api/users/${id}/role`, method: "PATCH" }),
-    updateStatus: (id) => ({ path: `/api/users/${id}/status`, method: "PATCH" }),
+    get: { path: "/api/users/:id", method: "GET" },
+    getByName: { path: "/api/users/by-name/:username", method: "GET" },
   },
   profile: {
-    get: (id) => ({ path: `/api/profile/${id}`, method: "GET" }),
-    update: { path: "/api/user/update", method: "PATCH" },
+    get: { path: "/api/profile/:id", method: "GET" },
     changePassword: { path: "/api/user/change-password", method: "POST" },
   }
 };
 
-export function buildUrl(path, params) {
-  if (!params) return typeof path === 'function' ? path().path : (path.path || path);
+/**
+ * Умный сборщик URL. 
+ * Если видит :id или :username в пути — заменяет их на реальные значения из params.
+ */
+export function buildUrl(apiRoute, params) {
+  let url = typeof apiRoute === 'string' ? apiRoute : apiRoute.path;
   
-  let finalPath = path;
-  if (typeof path === 'function') {
-    const res = path(params.id || params.username || params);
-    finalPath = res.path || res;
-  } else if (path.path) {
-    finalPath = path.path;
+  if (params) {
+    // Заменяем именованные параметры :id, :username и т.д.
+    Object.entries(params).forEach(([key, value]) => {
+      if (url.includes(`:${key}`)) {
+        url = url.replace(`:${key}`, encodeURIComponent(String(value)));
+      }
+    });
+
+    // Добавляем остальные параметры как Query String (например, ?threadId=5)
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (!apiRoute.path?.includes(`:${key}`) && key !== 'id' && value !== undefined) {
+        queryParams.append(key, String(value));
+      }
+    });
+    
+    const queryString = queryParams.toString();
+    if (queryString) {
+      url += (url.includes('?') ? '&' : '?') + queryString;
+    }
   }
   
-  // Очистка пути от параметров, которые мы вставили внутрь (как :id)
-  return finalPath;
+  return url;
 }
 
 export async function apiRequest(method, url, data) {
