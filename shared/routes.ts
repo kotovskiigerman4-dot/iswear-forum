@@ -24,9 +24,9 @@ export const api = {
   },
   users: {
     list: { path: "/api/users", method: "GET" },
-    get: { path: "/api/users/:id", method: "GET" },
+    get: { path: "/api/users/:id", method: "GET" }, // Исправлено для профилей
+    update: { path: "/api/user", method: "PATCH" }, // Для редактирования своего профиля
   },
-  // ЭТОГО НЕ ХВАТАЛО ДЛЯ ТВОЕГО use-api.ts:
   stats: {
     get: { path: "/api/stats", method: "GET" },
   },
@@ -41,25 +41,29 @@ export const api = {
 /**
  * Универсальный сборщик URL для фронтенда
  */
-export function buildUrl(apiRoute, params) {
-  // Если передана строка (как в useProfile), используем её напрямую
+export function buildUrl(apiRoute: any, params?: Record<string, any>) {
+  // 1. Получаем базовый путь
   let url = typeof apiRoute === 'string' ? apiRoute : (apiRoute?.path || "");
   
   if (!url) return "/api/undefined-route";
 
   if (params) {
-    // 1. Заменяем динамические части пути (:id, :username)
+    const usedKeys = new Set();
+
+    // 2. Заменяем динамические части пути (:id, :username)
     Object.entries(params).forEach(([key, value]) => {
-      if (url.includes(`:${key}`)) {
-        url = url.replace(`:${key}`, encodeURIComponent(String(value)));
+      const placeholder = `:${key}`;
+      if (url.includes(placeholder)) {
+        url = url.replace(placeholder, encodeURIComponent(String(value)));
+        usedKeys.add(key); // Помечаем, что этот ключ уже вшит в URL
       }
     });
 
-    // 2. Добавляем остальные параметры как Query String
+    // 3. Добавляем остальные параметры как Query String
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      // Добавляем в query только то, что не ушло в путь
-      if (!url.includes(encodeURIComponent(String(value))) && key !== 'id' && value !== undefined) {
+      // Добавляем в query только то, что НЕ было использовано в пути
+      if (!usedKeys.has(key) && value !== undefined && value !== null) {
         queryParams.append(key, String(value));
       }
     });
@@ -73,16 +77,30 @@ export function buildUrl(apiRoute, params) {
   return url;
 }
 
-export async function apiRequest(method, url, data) {
+export async function apiRequest(method: string, url: string, data?: any) {
   const res = await fetch(url, {
     method,
     headers: { "Content-Type": "application/json" },
     body: data ? JSON.stringify(data) : undefined,
   });
 
+  // Если сервер вернул HTML вместо JSON (твоя проблема с 404/Index HTML)
+  const contentType = res.headers.get("content-type");
+  if (contentType && contentType.includes("text/html")) {
+    console.error("CRITICAL: Server returned HTML instead of JSON at " + url);
+    throw new Error("API_ROUTE_NOT_FOUND_ON_SERVER");
+  }
+
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(errorText || res.statusText);
+    let errorDetail;
+    try {
+      errorDetail = JSON.parse(errorText).message;
+    } catch {
+      errorDetail = errorText;
+    }
+    throw new Error(errorDetail || res.statusText);
   }
+  
   return res.json();
 }
