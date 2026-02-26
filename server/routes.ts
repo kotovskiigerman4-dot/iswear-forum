@@ -72,13 +72,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- API ПОЛЬЗОВАТЕЛЕЙ ---
+  // --- API ПОЛЬЗОВАТЕЛЕЙ И АДМИН ПАНЕЛЬ ---
 
+  // Список пользователей для админки (полные данные)
+  app.get("/api/admin/users", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user.role !== "ADMIN" && req.user.role !== "MODERATOR")) {
+      return res.sendStatus(403);
+    }
+    try {
+      const users = await storage.listUsers();
+      res.json(users.map(({ passwordHash, ...u }) => u));
+    } catch (e) {
+      res.status(500).json({ message: "Failed to fetch admin user list" });
+    }
+  });
+
+  // Обновление пользователя (роль, статус) через админку
+  app.patch("/api/admin/users/:id", async (req, res) => {
+    if (!req.isAuthenticated() || req.user.role !== "ADMIN") {
+      return res.sendStatus(403);
+    }
+    try {
+      const id = parseInt(req.params.id);
+      const updatedUser = await storage.updateUser(id, req.body);
+      res.json(updatedUser);
+    } catch (e) {
+      res.status(500).json({ message: "Update failed" });
+    }
+  });
+
+  // Публичный список пользователей
   app.get("/api/users", async (req, res) => {
     try {
       const allUsers = await storage.listUsers();
-      
-      // ИСПРАВЛЕНИЕ: Модеры и админы видят PENDING, остальные только APPROVED
       const isStaff = req.isAuthenticated() && (req.user.role === "ADMIN" || req.user.role === "MODERATOR");
       
       const visibleUsers = isStaff 
@@ -186,7 +212,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categories = await storage.getCategories();
       res.json(categories);
     } catch (e) {
-      res.status(500).json({ message: "Failed" });
+      res.status(500).json({ message: "Failed to fetch categories" });
+    }
+  });
+
+  // Исправлено: Получение категории по ID (для страниц категорий)
+  app.get("/api/categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid category ID" });
+
+      const category = await storage.getCategory(id);
+      if (!category) return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
+
+      const threads = await storage.getThreadsByCategory(id);
+      res.json({ ...category, threads: threads || [] });
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching category" });
     }
   });
 
@@ -231,6 +273,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(post);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
+    }
+  });
+
+  // --- API СТАТИСТИКИ ---
+  app.get("/api/stats", async (_req, res) => {
+    try {
+      const users = await storage.listUsers();
+      // Считаем онлайн: заходили последние 5 минут
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const onlineCount = users.filter(u => u.lastSeen && new Date(u.lastSeen) > fiveMinutesAgo).length;
+      
+      res.json({
+        totalUsers: users.length,
+        onlineUsers: onlineCount
+      });
+    } catch (e) {
+      res.status(500).json({ message: "Failed to fetch stats" });
     }
   });
 
