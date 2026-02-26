@@ -1,7 +1,6 @@
 // @ts-nocheck
 
-// Базовая структура, которая ТОЧНО нужна
-const rawApi = {
+export const api = {
   auth: {
     me: { path: "/api/user", method: "GET" },
     login: { path: "/api/login", method: "POST" },
@@ -12,6 +11,7 @@ const rawApi = {
     list: { path: "/api/threads", method: "GET" },
     get: (id) => ({ path: `/api/threads/${id}`, method: "GET" }),
     create: { path: "/api/threads", method: "POST" },
+    delete: (id) => ({ path: `/api/threads/${id}`, method: "DELETE" }),
   },
   categories: {
     list: { path: "/api/categories", method: "GET" },
@@ -21,48 +21,36 @@ const rawApi = {
     list: (threadId) => ({ path: `/api/posts?threadId=${threadId}`, method: "GET" }),
     get: (id) => ({ path: `/api/posts/${id}`, method: "GET" }),
     create: { path: "/api/posts", method: "POST" },
+    delete: (id) => ({ path: `/api/posts/${id}`, method: "DELETE" }),
   },
+  // ЭТО ТО, ЧТО ПОЧИНИТ АДМИНКУ И ПРОФИЛИ:
   users: {
     list: { path: "/api/users", method: "GET" },
     get: (id) => ({ path: `/api/users/${id}`, method: "GET" }),
+    getByName: (username) => ({ path: `/api/users/by-name/${username}`, method: "GET" }),
+    updateRole: (id) => ({ path: `/api/users/${id}/role`, method: "PATCH" }),
+    updateStatus: (id) => ({ path: `/api/users/${id}/status`, method: "PATCH" }),
+  },
+  profile: {
+    get: (id) => ({ path: `/api/profile/${id}`, method: "GET" }),
+    update: { path: "/api/user/update", method: "PATCH" },
+    changePassword: { path: "/api/user/change-password", method: "POST" },
   }
 };
 
-// ХАК: Используем Proxy, чтобы если фронтенд запросит api.something.get, 
-// и его нет в списке, приложение НЕ ПАДАЛО, а просто возвращало пустую заглушку.
-export const api = new Proxy(rawApi, {
-  get(target, prop) {
-    if (prop in target) return target[prop];
-    
-    // Если фронт просит что-то неизвестное (например, api.notifications)
-    return new Proxy({}, {
-      get(_, subProp) {
-        // Если просят функцию (типа .get() или .list())
-        return () => ({ path: `/api/${String(prop)}`, method: "GET" });
-      }
-    });
-  }
-});
-
 export function buildUrl(path, params) {
-  if (!params) return path;
+  if (!params) return typeof path === 'function' ? path().path : (path.path || path);
+  
   let finalPath = path;
   if (typeof path === 'function') {
-    const res = path(params.id || params);
+    const res = path(params.id || params.username || params);
     finalPath = res.path || res;
+  } else if (path.path) {
+    finalPath = path.path;
   }
   
-  try {
-    const url = new URL(finalPath, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && key !== 'id') {
-        url.searchParams.append(key, value.toString());
-      }
-    });
-    return url.pathname + url.search;
-  } catch (e) {
-    return finalPath;
-  }
+  // Очистка пути от параметров, которые мы вставили внутрь (как :id)
+  return finalPath;
 }
 
 export async function apiRequest(method, url, data) {
