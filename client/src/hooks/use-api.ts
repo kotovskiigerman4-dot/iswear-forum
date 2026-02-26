@@ -191,3 +191,59 @@ export function useDeleteThread() {
     }
   });
 }
+
+// ====================
+// ДОБАВЬ ЭТО В use-api.ts
+// ====================
+
+// Тот самый хук, на котором упал билд (для страницы админа)
+export function useUsersList() {
+  return useQuery({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users");
+      return handleResponse(res);
+    },
+  });
+}
+
+// На случай, если страница админа или списка юзеров захочет забанить/удалить
+export function useAdminDeleteUser() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/users/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "TERMINATED", description: "User removed from system." });
+    },
+  });
+}
+
+// Для обновления ролей или статусов из админки
+export function useAdminUpdateUser() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/users/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      return handleResponse(res);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "ADMIN_ACTION", description: "User updated successfully." });
+    },
+  });
+}
