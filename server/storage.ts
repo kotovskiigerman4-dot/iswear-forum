@@ -21,19 +21,25 @@ export interface IStorage {
   listUsers(): Promise<SafeUser[]>;
   getUserCount(): Promise<number>;
   getPendingUsersCount(): Promise<number>;
-  // --- НОВЫЕ МЕТОДЫ ---
+  
+  // --- МЕТОДЫ ПРОФИЛЯ ---
   updateLastSeen(userId: number): Promise<void>;
   incrementViewCount(userId: number): Promise<void>;
   getUserThreads(userId: number): Promise<Thread[]>;
-  // --------------------
+  updateUserPassword(id: number, newPasswordHash: string): Promise<void>;
+
+  // --- МЕТОДЫ ФОРУМА ---
   getCategories(): Promise<CategoryWithThreads[]>;
   getCategory(id: number): Promise<CategoryWithThreads | undefined>;
   getThread(id: number): Promise<ThreadWithPosts | undefined>;
   createThread(thread: typeof threads.$inferInsert): Promise<Thread>;
   deleteThread(id: number): Promise<void>;
   getThreadCount(): Promise<number>;
+  searchThreads(query: string): Promise<Thread[]>;
+
+  // --- МЕТОДЫ ПОСТОВ ---
   createPost(post: typeof posts.$inferInsert): Promise<Post>;
-  getPost(id: number): Promise<Post | undefined>; // Добавлено для проверки прав
+  getPost(id: number): Promise<Post | undefined>;
   deletePost(id: number): Promise<void>;
   seedCategories(): Promise<void>;
 }
@@ -98,7 +104,7 @@ export class DatabaseStorage implements IStorage {
     return Number(count.value);
   }
 
-  // --- РЕАЛИЗАЦИЯ НОВЫХ МЕТОДОВ ---
+  // --- РЕАЛИЗАЦИЯ МЕТОДОВ ПРОФИЛЯ ---
 
   async updateLastSeen(userId: number): Promise<void> {
     const cleanId = Math.floor(Number(userId));
@@ -122,7 +128,22 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(threads.createdAt));
   }
 
-  // --------------------------------
+  async updateUserPassword(id: number, newPasswordHash: string): Promise<void> {
+    const cleanId = Math.floor(Number(id));
+    await db.update(users)
+      .set({ passwordHash: newPasswordHash })
+      .where(eq(users.id, cleanId));
+  }
+
+  // --- РЕАЛИЗАЦИЯ МЕТОДОВ ФОРУМА ---
+
+  async searchThreads(query: string): Promise<Thread[]> {
+    return await db.select()
+      .from(threads)
+      .where(sql`${threads.title} ILIKE ${'%' + query + '%'}`)
+      .orderBy(desc(threads.createdAt))
+      .limit(50);
+  }
 
   private async enrichThreads(catThreads: Thread[]): Promise<any[]> {
     return await Promise.all(catThreads.map(async t => {
@@ -182,7 +203,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteThread(id: number): Promise<void> {
     const cleanId = Math.floor(Number(id));
-    // Сначала удаляем все посты треда (ручное каскадное удаление для надежности)
     await db.delete(posts).where(eq(posts.threadId, cleanId));
     await db.delete(threads).where(eq(threads.id, cleanId));
   }
@@ -197,7 +217,6 @@ export class DatabaseStorage implements IStorage {
     return post;
   }
 
-  // Метод получения конкретного поста (нужен для логики удаления в роутах)
   async getPost(id: number): Promise<Post | undefined> {
     const cleanId = Math.floor(Number(id));
     const [post] = await db.select().from(posts).where(eq(posts.id, cleanId));
