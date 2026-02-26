@@ -54,6 +54,12 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  async getProfile(id: number): Promise<User | undefined> {
+  const cleanId = Math.floor(Number(id));
+  const [user] = await db.select().from(users).where(eq(users.id, cleanId));
+  return user || undefined;
+}
+
   async getUser(id: number): Promise<User | undefined> {
     const cleanId = Math.floor(Number(id));
     if (isNaN(cleanId)) return undefined;
