@@ -22,7 +22,6 @@ async function comparePasswords(supplied: string, stored: string) {
     const hashedBuf = Buffer.from(hashed, "hex");
     const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
 
-    // ИСПРАВЛЕНИЕ: Защита от ошибки "Input buffers must have the same byte length"
     if (hashedBuf.length !== suppliedBuf.length) {
       return false;
     }
@@ -33,13 +32,12 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
-  // На Render ОБЯЗАТЕЛЬНО для корректной работы кук через балансировщик
   app.set("trust proxy", 1);
 
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "fallback_secret_for_dev_only",
-    resave: true,               // ИСПРАВЛЕНО: Должно быть true для внешних хранилищ типа Postgres
-    saveUninitialized: true,    // ИСПРАВЛЕНО: Помогает инициализировать сессию на проде
+    resave: true,
+    saveUninitialized: true,
     store: storage.sessionStore,
     proxy: true,
     cookie: {
@@ -78,7 +76,8 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/auth/register", async (req, res) => {
+  // Пути исправлены под фронтенд: убрано /auth
+  app.post("/api/register", async (req, res) => {
     try {
       const { username, password } = req.body;
       if (!username || !password) return res.status(400).json({ message: "Missing credentials" });
@@ -104,7 +103,7 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/auth/login", (req, res, next) => {
+  app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) return res.status(401).json({ message: "Invalid credentials" });
@@ -115,12 +114,12 @@ export function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  app.get("/api/auth/user", (req, res) => {
+  app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     res.json(req.user);
   });
   
-  app.post("/api/auth/logout", (req, res, next) => {
+  app.post("/api/logout", (req, res, next) => {
     req.logout((err) => {
       if (err) return next(err);
       res.sendStatus(200);
