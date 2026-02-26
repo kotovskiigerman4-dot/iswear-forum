@@ -145,6 +145,26 @@ export function useProfile(id: number | string) {
   });
 }
 
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/profile/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      return handleResponse(res);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile", Number(data.id)] });
+      toast({ title: "UPDATED", description: "Profile info synchronized." });
+    },
+  });
+}
+
 export function useStats() {
   return useQuery({
     queryKey: ["/api/stats"],
