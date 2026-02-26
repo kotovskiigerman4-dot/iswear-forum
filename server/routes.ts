@@ -10,7 +10,7 @@ const isStaff = (req: any) => req.isAuthenticated() && (req.user.role === "ADMIN
 const isAdmin = (req: any) => req.isAuthenticated() && req.user.role === "ADMIN";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Вызываем сидинг при запуске (чтобы категории появились сами)
+  // Вызываем сидинг при запуске
   storage.seedCategories().catch(console.error);
 
   app.use((req, _res, next) => {
@@ -18,6 +18,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       storage.updateLastSeen(req.user.id).catch(() => {});
     }
     next();
+  });
+
+  // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ (ДОБАВЛЕНО) ---
+  
+  // Получение конкретного профиля
+  app.get("/api/users/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+
+      const user = await storage.getUser(id);
+      if (!user) return res.status(404).json({ message: "U53R_N07_F0UND" });
+
+      // Безопасная отправка данных (без хеша пароля)
+      const { passwordHash, ...safeUser } = user;
+      
+      // Маппинг полей для фронтенда (snake_case -> camelCase)
+      res.json({
+        ...safeUser,
+        avatarUrl: user.avatarUrl || user.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${user.username}`,
+        applicationReason: user.applicationReason || user.application_reason,
+        lastSeen: user.lastSeen || user.last_seen
+      });
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching profile" });
+    }
+  });
+
+  // Список всех пользователей (для страницы Users)
+  app.get("/api/users", async (req, res) => {
+    const users = await storage.listUsers();
+    // Отдаем только безопасные данные
+    const safeUsers = users.map(({ passwordHash, ...u }) => ({
+        ...u,
+        avatarUrl: u.avatarUrl || u.avatar_url
+    }));
+    res.json(safeUsers);
+  });
+
+  // --- ТРЕДЫ (ДОБАВЛЕНО СОЗДАНИЕ) ---
+  app.post("/api/threads", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const thread = await storage.createThread({
+        ...req.body,
+        authorId: req.user.id
+      });
+      res.status(201).json(thread);
+    } catch (e) {
+      res.status(400).json({ message: "Failed to create thread. Check categoryId." });
+    }
   });
 
   // --- АДМИНКА И МОДЕРКА ---
@@ -32,7 +84,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const id = parseInt(req.params.id);
     const updateData = { ...req.body };
 
-    // Защита: только АДМИН может менять роли
     if (!isAdmin(req) && updateData.role) {
       delete updateData.role;
     }
@@ -45,7 +96,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- КАТЕГОРИИ (ФИКС ОШИБКИ 200 / N07_F0UND) ---
+  // --- КАТЕГОРИИ ---
   app.get("/api/categories", async (_req, res) => {
     const cats = await storage.getCategories();
     res.json(cats);
@@ -53,8 +104,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/categories/:id", async (req, res) => {
     const id = parseInt(req.params.id);
-    
-    // Если id не число - пробуем найти по имени в общем списке
     if (isNaN(id)) {
       const all = await storage.getCategories();
       const catByName = all.find(c => c.name.toLowerCase() === req.params.id.toLowerCase());
@@ -64,7 +113,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const category = await storage.getCategory(id);
     if (!category) return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
-    
     res.json(category);
   });
 
@@ -81,7 +129,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const thread = await storage.getThread(id);
     if (!thread) return res.sendStatus(404);
 
-    // Модеры, Админы или Автор
     if (!isStaff(req) && thread.authorId !== req.user.id) {
       return res.sendStatus(403);
     }
@@ -95,15 +142,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const totalUsers = await storage.getUserCount();
       const allUsers = await storage.listUsers();
-      // Онлайн если заходил последние 5 минут
       const onlineUsers = allUsers.filter(u => u.lastSeen && (Date.now() - new Date(u.lastSeen).getTime() < 300000)).length;
       res.json({ totalUsers, onlineUsers });
     } catch (e) {
       res.json({ totalUsers: 0, onlineUsers: 0 });
     }
   });
-
-  // ... (остальные твои роуты для поиска и загрузки файлов)
 
   const httpServer = createServer(app);
   return httpServer;
