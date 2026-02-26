@@ -74,53 +74,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- API ПОЛЬЗОВАТЕЛЕЙ ---
 
-  // ПИНГ: Получение юзера по имени (для фронтенд-ссылок @username)
-  app.get("/api/users/by-name/:username", async (req, res) => {
-    try {
-      const user = await storage.getUserByUsername(req.params.username);
-      if (!user) return res.status(404).json({ message: "User not found" });
-      const { passwordHash, email, ...safeUser } = user;
-      res.json(safeUser);
-    } catch (e) {
-      res.status(500).json({ message: "Error fetching user" });
-    }
-  });
-
-  // СМЕНА ПАРОЛЯ
-  app.post("/api/user/change-password", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const { oldPassword, newPassword } = req.body;
-
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ message: "New password too short" });
-    }
-
-    try {
-      const user = await storage.getUser(req.user.id);
-      if (!user) return res.status(404).json({ message: "User not found" });
-
-      const [hashed, salt] = user.passwordHash.split(":");
-      const hashedOld = (await hashAsync(oldPassword, salt, 64)) as Buffer;
-      
-      if (!timingSafeEqual(Buffer.from(hashed, "hex"), hashedOld)) {
-        return res.status(400).json({ message: "Invalid old password" });
-      }
-
-      const newSalt = randomBytes(16).toString("hex");
-      const hashedNew = (await hashAsync(newPassword, newSalt, 64)) as Buffer;
-      const newPasswordHash = `${hashedNew.toString("hex")}:${newSalt}`;
-
-      await storage.updateUserPassword(user.id, newPasswordHash);
-      res.json({ message: "Password updated successfully" });
-    } catch (e) {
-      res.status(500).json({ message: "Failed to change password" });
-    }
-  });
-
-  app.get("/api/users", async (_req, res) => {
+  app.get("/api/users", async (req, res) => {
     try {
       const allUsers = await storage.listUsers();
-      const visibleUsers = allUsers.filter(u => u.status === "APPROVED" || u.role === "ADMIN");
+      
+      // ИСПРАВЛЕНИЕ: Модеры и админы видят PENDING, остальные только APPROVED
+      const isStaff = req.isAuthenticated() && (req.user.role === "ADMIN" || req.user.role === "MODERATOR");
+      
+      const visibleUsers = isStaff 
+        ? allUsers 
+        : allUsers.filter(u => u.status === "APPROVED" || u.role === "ADMIN");
+
       const roleWeight: Record<string, number> = {
         "ADMIN": 1, "MODERATOR": 2, "OLDGEN": 3, "MEMBER": 4, "USER": 5
       };
@@ -135,17 +99,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const safeUsers = sortedUsers.map(({ passwordHash, email, ...user }) => user);
       res.json(safeUsers);
     } catch (e) {
-      res.status(500).json({ message: "Failed to fetch neural nodes" });
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.get("/api/users/by-name/:username", async (req, res) => {
+    try {
+      const user = await storage.getUserByUsername(req.params.username);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const { passwordHash, email, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching user" });
+    }
+  });
+
+  app.post("/api/user/change-password", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const { oldPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) return res.status(400).json({ message: "Too short" });
+
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) return res.status(404).json({ message: "Not found" });
+
+      const [hashed, salt] = user.passwordHash.split(":");
+      const hashedOld = (await hashAsync(oldPassword, salt, 64)) as Buffer;
+      
+      if (!timingSafeEqual(Buffer.from(hashed, "hex"), hashedOld)) {
+        return res.status(400).json({ message: "Invalid old password" });
+      }
+
+      const newSalt = randomBytes(16).toString("hex");
+      const hashedNew = (await hashAsync(newPassword, newSalt, 64)) as Buffer;
+      await storage.updateUserPassword(user.id, `${hashedNew.toString("hex")}:${newSalt}`);
+      res.json({ message: "Success" });
+    } catch (e) {
+      res.status(500).json({ message: "Failed" });
     }
   });
 
   app.get(["/api/users/:id", "/api/profile/:id"], async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       await storage.incrementViewCount(id);
       const user = await storage.getUser(id);
-      if (!user) return res.status(404).json({ message: "User not found" });
+      if (!user) return res.status(404).json({ message: "Not found" });
       const { passwordHash, ...safeUser } = user;
       res.json(safeUser);
     } catch (e) {
@@ -170,7 +170,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/posts/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const id = parseInt(req.params.id);
-    const post = await storage.getPost(id); // Убедись, что метод getPost есть в storage
+    const post = await storage.getPost(id); 
     if (!post) return res.sendStatus(404);
 
     const canDelete = req.user.role === "ADMIN" || req.user.role === "MODERATOR" || post.authorId === req.user.id;
@@ -180,35 +180,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.sendStatus(204);
   });
 
-  // --- ОСТАЛЬНЫЕ РОУТЫ (ТРЕДЫ, ПОСТЫ, КАТЕГОРИИ) ---
+  // --- ТРЕДЫ, ПОСТЫ, КАТЕГОРИИ ---
   app.get("/api/categories", async (_req, res) => {
     try {
       const categories = await storage.getCategories();
       res.json(categories);
     } catch (e) {
-      res.status(500).json({ message: "Failed to load categories" });
-    }
-  });
-
-  app.get("/api/categories/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid category ID" });
-      const category = await storage.getCategory(id);
-      if (!category) return res.status(404).json({ message: "Category not found" });
-      res.json(category);
-    } catch (e) {
-      res.status(500).json({ message: "Internal server error" });
+      res.status(500).json({ message: "Failed" });
     }
   });
 
   app.get("/api/threads/:id", async (req, res) => {
     try {
       const thread = await storage.getThread(parseInt(req.params.id));
-      if (!thread) return res.status(404).json({ message: "Thread not found" });
+      if (!thread) return res.status(404).json({ message: "Not found" });
       res.json(thread);
     } catch (e) {
-      res.status(500).json({ message: "Error loading thread" });
+      res.status(500).json({ message: "Error" });
     }
   });
 
