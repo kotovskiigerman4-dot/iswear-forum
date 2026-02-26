@@ -70,6 +70,26 @@ export function useCreateThread() {
       toast({ title: "SUCCESS", description: "Thread initialized." });
     },
   });
+
+}
+export function useDeletePost() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, threadId }: { id: number; threadId: number }) => {
+      const res = await fetch(`/api/posts/${id}`, { 
+        method: "DELETE", 
+        credentials: "include" 
+      });
+      if (!res.ok) throw new Error("Failed to delete post");
+      return { id, threadId };
+    },
+    onSuccess: (data) => {
+      // Обновляем кэш треда, чтобы пост исчез мгновенно
+      queryClient.invalidateQueries({ queryKey: ["/api/threads", Number(data.threadId)] });
+      toast({ title: "DELETED", description: "Post removed." });
+    },
+  });
 }
 
 // ====================
