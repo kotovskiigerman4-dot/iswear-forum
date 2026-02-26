@@ -2,9 +2,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
-import { useLocation } from "wouter"; // <--- ДОБАВИЛИ
+import { useLocation } from "wouter";
 
-// Вспомогательная функция для обработки ошибок fetch
 async function handleResponse(res: Response) {
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -18,38 +17,38 @@ async function handleResponse(res: Response) {
 // ====================
 export function useCategories() {
   return useQuery({
-    queryKey: [api.categories.list.path],
+    queryKey: ["/api/categories"], // Используем строку для простоты
     queryFn: async () => {
-      const res = await fetch(api.categories.list.path);
+      const res = await fetch("/api/categories");
       return handleResponse(res);
     },
   });
 }
 
-export function useCategory(id: number) {
+export function useCategory(id: number | string) {
+  const cleanId = Number(id);
   return useQuery({
-    queryKey: [api.categories.get.path, id],
+    queryKey: ["/api/categories", cleanId],
     queryFn: async () => {
-      const url = buildUrl(api.categories.get.path, { id });
-      const res = await fetch(url);
+      const res = await fetch(`/api/categories/${cleanId}`);
       return handleResponse(res);
     },
-    enabled: !!id && !isNaN(id),
+    enabled: !isNaN(cleanId),
   });
 }
 
 // ====================
 // THREADS
 // ====================
-export function useThread(id: number) {
+export function useThread(id: number | string) {
+  const cleanId = Number(id);
   return useQuery({
-    queryKey: [api.threads.get.path, id],
+    queryKey: ["/api/threads", cleanId],
     queryFn: async () => {
-      const url = buildUrl(api.threads.get.path, { id });
-      const res = await fetch(url);
+      const res = await fetch(`/api/threads/${cleanId}`);
       return handleResponse(res);
     },
-    enabled: !!id && !isNaN(id),
+    enabled: !isNaN(cleanId),
   });
 }
 
@@ -58,7 +57,7 @@ export function useCreateThread() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async (data) => {
-      const res = await fetch(api.threads.create.path, {
+      const res = await fetch("/api/threads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -67,88 +66,41 @@ export function useCreateThread() {
       return handleResponse(res);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: [api.categories.get.path, data.categoryId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
       toast({ title: "SUCCESS", description: "Thread initialized." });
     },
   });
 }
 
-export function useDeleteThread() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [, setLocation] = useLocation(); // <--- ДОБАВИЛИ ДЛЯ РЕДИРЕКТА
-
-  return useMutation({
-    mutationFn: async ({ id, categoryId }) => { // <--- ПРИНИМАЕМ ОБЪЕКТ
-      const url = buildUrl(api.threads.delete.path, { id });
-      const res = await fetch(url, { method: "DELETE", credentials: "include" });
-      if (!res.ok) throw new Error("Purge failed");
-      return { id, categoryId };
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: [api.categories.list.path] });
-      queryClient.invalidateQueries({ queryKey: [api.categories.get.path, data.categoryId] });
-      toast({ title: "DELETED", description: "Thread purged." });
-      // Редирект сработает, если в компоненте не переопределен onSuccess
-      setLocation("/"); 
-    }
-  });
-}
-
 // ====================
-// POSTS
+// POSTS (ПОЧИНЕНО: Принудительное число)
 // ====================
 export function useCreatePost() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data) => {
-      const res = await fetch(api.posts.create.path, {
+      // Гарантируем, что threadId — число перед отправкой
+      const payload = {
+        ...data,
+        threadId: Number(data.threadId)
+      };
+      const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
         credentials: "include",
       });
       return handleResponse(res);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: [api.threads.get.path, data.threadId] });
-    },
-  });
-}
-
-export function useDeletePost() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  return useMutation({
-    mutationFn: async ({ id, threadId }) => { // <--- ТЕПЕРЬ ПРИНИМАЕМ ОБЪЕКТ
-      const res = await fetch(`/api/posts/${id}`, { 
-        method: "DELETE", 
-        credentials: "include" 
-      });
-      if (!res.ok) throw new Error("Failed to delete post");
-      return { id, threadId };
-    },
-    onSuccess: (data) => {
-      // Обновляем конкретный тред, чтобы пост исчез мгновенно
-      queryClient.invalidateQueries({ queryKey: [api.threads.get.path, data.threadId] });
-      toast({ title: "DELETED", description: "Post removed from database." });
+      queryClient.invalidateQueries({ queryKey: ["/api/threads", Number(data.threadId)] });
     },
   });
 }
 
 // ====================
-// USERS & ADMIN (ОСТАЛЬНОЕ БЕЗ ИЗМЕНЕНИЙ)
+// USERS & PROFILE (ПОЧИНЕНО)
 // ====================
-export function useUsersList() {
-  return useQuery({
-    queryKey: ["/api/admin/users"],
-    queryFn: async () => {
-      const res = await fetch("/api/admin/users", { credentials: "include" });
-      return handleResponse(res);
-    },
-  });
-}
-
 export function usePublicUsers() {
   return useQuery({
     queryKey: ["/api/users"],
@@ -159,68 +111,43 @@ export function usePublicUsers() {
   });
 }
 
-export function useAdminUpdateUser() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  return useMutation({
-    mutationFn: async ({ id, data }) => {
-      const res = await fetch(`/api/admin/users/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
+export function useProfile(id: number | string) {
+  const cleanId = Number(id);
+  return useQuery({
+    queryKey: ["/api/profile", cleanId],
+    queryFn: async () => {
+      // Стучимся в эндпоинт, который мы прописали на бэке
+      const res = await fetch(`/api/profile/${cleanId}`);
       return handleResponse(res);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      queryClient.invalidateQueries({ queryKey: [api.stats.get.path] });
-      toast({ title: "SUCCESS", description: "Database updated." });
-    },
+    enabled: !isNaN(cleanId),
+    retry: 1,
   });
 }
 
 export function useStats() {
   return useQuery({
-    queryKey: [api.stats.get.path],
+    queryKey: ["/api/stats"],
     queryFn: async () => {
-      const res = await fetch(api.stats.get.path);
+      const res = await fetch("/api/stats");
       return handleResponse(res);
     },
   });
 }
 
-export function useProfile(id: number) {
-  return useQuery({
-    queryKey: ["/api/users/profile", id], 
-    queryFn: async () => {
-      const url = buildUrl("/api/users/:id", { id });
-      const res = await fetch(url);
-      return handleResponse(res);
-    },
-    enabled: !!id && !isNaN(id),
-    retry: 1,
-  });
-}
-
-export function useUpdateProfile() {
+// Вспомогательный хук для удаления (чтобы модеры могли чистить)
+export function useDeleteThread() {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const [, setLocation] = useLocation();
   return useMutation({
-    mutationFn: async ({ id, data }) => {
-      const url = buildUrl("/api/users/:id", { id });
-      const res = await fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      return handleResponse(res);
+    mutationFn: async ({ id }) => {
+      const res = await fetch(`/api/threads/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Delete failed");
+      return id;
     },
-    onSuccess: (updatedUser) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users/profile", updatedUser.id] });
-      toast({ title: "UPDATED", description: "Profile saved." });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      setLocation("/");
     }
   });
 }
