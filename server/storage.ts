@@ -3,6 +3,7 @@ import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { eq, desc, sql, and } from "drizzle-orm";
+import { 
   users, categories, threads, posts, notifications,
   type User, type Category, type Thread, type Post, 
   type CategoryWithThreads, type ThreadWithPosts, type SafeUser,
