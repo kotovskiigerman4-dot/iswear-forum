@@ -41,6 +41,7 @@ export interface IStorage {
   createNotification(notif: InsertNotification): Promise<Notification>;
 getNotifications(userId: number): Promise<Notification[]>;
 markNotificationsRead(userId: number): Promise<void>;
+  searchUsers(query: string): Promise<SafeUser[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -57,6 +58,14 @@ export class DatabaseStorage implements IStorage {
  async createNotification(notif: any) {
   const [notification] = await db.insert(notifications).values(notif).returning();
   return notification;
+}
+
+  async searchUsers(query: string): Promise<SafeUser[]> {
+  const results = await db.select()
+    .from(users)
+    .where(sql`${users.username} ILIKE ${'%' + query + '%'}`)
+    .limit(20);
+  return results.map(u => this.toSafeUser(u));
 }
 
   async markNotificationsRead(userId: number): Promise<void> {
