@@ -59,7 +59,7 @@ export default function ThreadView() {
 
   const handleReply = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content) return;
+    if (!content.trim()) return;
     
     createPost.mutate(
       { 
@@ -96,7 +96,6 @@ export default function ThreadView() {
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header */}
         <div className="border-b border-border pb-4 flex justify-between items-start">
           <div>
             <Link href={`/category/${thread.categoryId}`} className="text-xs text-primary hover:underline mb-2 block">
@@ -107,24 +106,16 @@ export default function ThreadView() {
               {format(new Date(thread.createdAt), 'PP pp')}
             </p>
           </div>
-          
           {(user?.role === "ADMIN" || user?.role === "MODERATOR") && (
-            <Button 
-              variant="destructive" 
-              size="sm" 
-              onClick={handleDeleteThread}
-              className="font-display text-[10px]"
-            >
+            <Button variant="destructive" size="sm" onClick={handleDeleteThread} className="font-display text-[10px]">
               [PURGE_THREAD]
             </Button>
           )}
         </div>
 
-        {/* Posts List */}
         <div className="space-y-4">
           {thread.posts?.map((post, index) => (
             <div key={post.id} className="flex flex-col md:flex-row gap-4">
-              {/* Author Sidebar */}
               <Card className="w-full md:w-48 p-4 shrink-0 flex flex-col items-center text-center bg-card/50 border-primary/10">
                 <div className="w-16 h-16 bg-secondary border border-border mb-3 flex items-center justify-center overflow-hidden">
                   {post.author.avatarUrl ? (
@@ -139,13 +130,10 @@ export default function ThreadView() {
                 <RoleBadge role={post.author.role} />
               </Card>
 
-              {/* Post Content Area */}
               <Card className="flex-1 flex flex-col min-h-[150px] relative">
                 <div className="p-3 border-b border-border/50 text-xs text-muted-foreground flex justify-between bg-card/30">
                   <span>{format(new Date(post.createdAt), 'PP pp')}</span>
                   <div className="flex gap-4 items-center">
-                    
-                    {/* Кнопка EDIT (автор или админ) */}
                     {(user?.id === post.authorId || user?.role === "ADMIN") && (
                       <button
                         onClick={() => {
@@ -159,8 +147,6 @@ export default function ThreadView() {
                         [{leet("EDIT")}]
                       </button>
                     )}
-
-                    {/* Кнопка DELETE (кроме первого поста) */}
                     {canDelete(post.authorId) && index !== 0 && (
                       <button 
                         onClick={() => {
@@ -177,28 +163,16 @@ export default function ThreadView() {
                     <span className="opacity-30 text-[10px]">#{post.id}</span>
                   </div>
                 </div>
-                
                 <div className="p-4 text-foreground whitespace-pre-wrap flex-1">
                   {post.content}
-                  
-                  {/* Attachment Preview */}
                   {post.fileUrl && (
                     <div className="mt-4 p-2 border border-primary/20 bg-primary/5 rounded-sm max-w-fit">
                       {post.fileUrl.endsWith('.png') ? (
                         <a href={post.fileUrl} target="_blank" rel="noreferrer" className="block">
-                          <img 
-                            src={post.fileUrl} 
-                            alt="attachment" 
-                            className="max-w-md max-h-96 object-contain border border-primary/30 hover:border-primary transition-all cursor-zoom-in" 
-                          />
+                          <img src={post.fileUrl} alt="attachment" className="max-w-md max-h-96 object-contain border border-primary/30 hover:border-primary transition-all cursor-zoom-in" />
                         </a>
                       ) : (
-                        <a 
-                          href={post.fileUrl} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="flex items-center gap-2 text-primary hover:underline p-2"
-                        >
+                        <a href={post.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-primary hover:underline p-2">
                           <FileText className="w-5 h-5" />
                           <span>{leet("VIEW_ATTACHED_DATA")} (.txt)</span>
                         </a>
@@ -211,9 +185,40 @@ export default function ThreadView() {
           ))}
         </div>
 
-        {/* Reply Form Section */}
         {user ? (
           <Card className="p-4 border-primary/30 mt-8 relative overflow-hidden bg-card/40">
             <div className="absolute top-0 left-0 w-1 h-full bg-primary animate-pulse" />
             <h3 className="text-lg text-primary flex items-center gap-2 mb-4 ml-2 font-display">
-              <Reply className="w-5 h-5" /> {leet("TRANSM
+              <Reply className="w-5 h-5" /> {leet("TRANSMIT_REPLY")}
+            </h3>
+            <form onSubmit={handleReply} className="space-y-4 ml-2">
+              <Textarea value={content} onChange={e => setContent(e.target.value)} required placeholder="Input data payload here..." rows={4} className="bg-background/50 border-primary/20 focus:border-primary" />
+              <div className="flex flex-wrap items-center gap-4">
+                <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".png,.txt" className="hidden" />
+                <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="border-primary/40 hover:bg-primary/10">
+                  <Paperclip className="w-4 h-4 mr-2" />
+                  {isUploading ? leet("UPLOADING...") : leet("ATTACH_FILE")}
+                </Button>
+                {fileUrl && (
+                  <div className="flex items-center gap-2 text-xs text-primary bg-primary/10 px-3 py-1.5 border border-primary/30 rounded-full">
+                    <span className="max-w-[150px] truncate">{fileUrl.split('/').pop()}</span>
+                    <button type="button" onClick={() => setFileUrl(null)} className="ml-1">
+                      <X className="w-3 h-3 hover:text-destructive transition-colors" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <Button type="submit" className="w-full md:w-auto px-8" disabled={createPost.isPending || isUploading}>
+                {createPost.isPending ? leet("SENDING...") : leet("SEND_PAYLOAD")}
+              </Button>
+            </form>
+          </Card>
+        ) : (
+          <Card className="p-8 text-center border-dashed border-primary/20 text-muted-foreground mt-8 bg-card/20">
+            <Link href="/auth" className="text-primary hover:underline font-bold">{leet("AUTHENTICATE")}</Link> {leet("TO_TRANSMIT_DATA")}
+          </Card>
+        )}
+      </div>
+    </Layout>
+  );
+}
