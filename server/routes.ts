@@ -139,6 +139,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+// --- УВЕДОМЛЕНИЯ ---
+app.get("/api/notifications", async (req, res) => {
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  const notifs = await storage.getNotifications(req.user.id);
+  res.json(notifs);
+});
+
+app.post("/api/notifications/read", async (req, res) => {
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  await storage.markNotificationsRead(req.user.id);
+  res.sendStatus(200);
+});
+
   app.get("/api/search", async (req, res) => {
   try {
     const query = req.query.q as string;
