@@ -139,6 +139,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/search", async (req, res) => {
+  try {
+    const query = req.query.q as string;
+    if (!query) return res.json([]);
+    
+    const results = await storage.searchThreads(query);
+    res.json(results);
+  } catch (e) {
+    res.status(500).json({ message: "Search error" });
+  }
+});
+
   const httpServer = createServer(app);
   return httpServer;
 }
