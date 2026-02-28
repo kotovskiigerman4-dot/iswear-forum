@@ -3,10 +3,10 @@ import { db, pool } from "./db";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { eq, desc, sql, and } from "drizzle-orm";
-import {
-  users, categories, threads, posts, notifications }
-  type User, type Category, type Thread, type Post,
+  users, categories, threads, posts, notifications,
+  type User, type Category, type Thread, type Post, 
   type CategoryWithThreads, type ThreadWithPosts, type SafeUser,
+  type Notification, type InsertNotification 
 } from "@shared/schema";
 
 const PostgresSessionStore = connectPg(session);
@@ -53,8 +53,9 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async createNotification(notif: any) {
-  return await db.insert(notifications).values(notif).returning();
+ async createNotification(notif: any) {
+  const [notification] = await db.insert(notifications).values(notif).returning();
+  return notification;
 }
 
   async markNotificationsRead(userId: number): Promise<void> {
