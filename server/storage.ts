@@ -50,6 +50,16 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  async createNotification(notif: any) {
+  return await db.insert(notifications).values(notif).returning();
+}
+
+async getNotifications(userId: number) {
+  return await db.select().from(notifications)
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt));
+}
+
   // --- ХЕЛПЕРЫ ---
   private toSafeUser(user: User): SafeUser {
     const { passwordHash, ...safe } = user;
