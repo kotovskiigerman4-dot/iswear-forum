@@ -8,6 +8,7 @@ import {
   type User, type Category, type Thread, type Post,
   type CategoryWithThreads, type ThreadWithPosts, type SafeUser,
 } from "@shared/schema";
+import { users, categories, threads, posts, notifications, ... } from "@shared/schema";
 
 const PostgresSessionStore = connectPg(session);
 
