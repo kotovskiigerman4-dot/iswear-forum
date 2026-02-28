@@ -49,14 +49,21 @@ app.use(helmet({
     const httpServer = await registerRoutes(app);
 
     if (process.env.NODE_ENV === "production") {
-      // Сначала пытаемся отдать статику
+      // Сначала пытаемся отдать статику (js, css, картинки)
       serveStatic(app);
       
-      // ИСПРАВЛЕНИЕ ТУТ: Заменили '*' на '(.*)' для совместимости с path-to-regexp v6+
-      app.get('(.*)', (req, res, next) => {
+      /**
+       * ИСПРАВЛЕНИЕ: Используем синтаксис '*any'. 
+       * Это именованный wild-card параметр, который корректно работает 
+       * в новых версиях path-to-regexp.
+       */
+      app.get('*any', (req, res, next) => {
+        // Если запрос начинается с /api, но не был обработан в registerRoutes,
+        // пробрасываем его дальше (он упадет в 404 по API)
         if (req.path.startsWith('/api')) {
           return next(); 
         }
+        // Для всех остальных путей (например, /profile/1) отдаем index.html
         res.sendFile(path.resolve(__dirname, '..', 'client', 'dist', 'index.html'));
       });
     } else {
@@ -69,7 +76,7 @@ app.use(helmet({
       console.log(`[server] Online at port ${port}`);
     });
   } catch (err) {
-    console.error("🚨 CRITICAL:", err);
+    console.error("🚨 CRITICAL ERROR DURING BOOTSTRAP:", err);
     process.exit(1);
   }
 })();
