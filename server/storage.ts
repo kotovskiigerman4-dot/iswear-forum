@@ -4,11 +4,10 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { eq, desc, sql, and } from "drizzle-orm";
 import {
-  users, categories, threads, posts,
+  users, categories, threads, posts, notifications }
   type User, type Category, type Thread, type Post,
   type CategoryWithThreads, type ThreadWithPosts, type SafeUser,
 } from "@shared/schema";
-import { users, categories, threads, posts, notifications, ... } from "@shared/schema";
 
 const PostgresSessionStore = connectPg(session);
 
@@ -56,6 +55,10 @@ export class DatabaseStorage implements IStorage {
 
   async createNotification(notif: any) {
   return await db.insert(notifications).values(notif).returning();
+}
+
+  async markNotificationsRead(userId: number): Promise<void> {
+  await db.update(notifications).set({ isRead: true }).where(eq(notifications.userId, userId));
 }
 
 async getNotifications(userId: number) {
