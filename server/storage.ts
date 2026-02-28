@@ -36,6 +36,7 @@ export interface IStorage {
   getPost(id: number): Promise<Post | undefined>;
   deletePost(id: number): Promise<void>;
   seedCategories(): Promise<void>;
+  updatePost(id: number, updates: Partial<typeof posts.$inferInsert>): Promise<Post>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -200,6 +201,15 @@ export class DatabaseStorage implements IStorage {
     const [thread] = await db.insert(threads).values(insertThread).returning();
     return thread;
   }
+
+  async updatePost(id: number, updates: Partial<typeof posts.$inferInsert>): Promise<Post> {
+  const [post] = await db.update(posts)
+    .set(updates)
+    .where(eq(posts.id, id))
+    .returning();
+  if (!post) throw new Error("Post not found");
+  return post;
+}
 
   async deleteThread(id: number): Promise<void> {
     await db.delete(posts).where(eq(posts.threadId, id));
