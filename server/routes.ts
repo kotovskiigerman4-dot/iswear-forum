@@ -180,7 +180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.sendStatus(200);
   });
 
-  // --- ПОИСК ---
+ // --- ПОИСК ---
   app.get("/api/search", async (req, res) => {
     try {
       const query = req.query.q as string;
@@ -199,10 +199,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
   return httpServer;
-} // <--- Закрывает export async function registerRoutes
-
-
-  } catch (e) {
-    res.status(500).json({ message: "Search error" });
-  }
-});
+}
