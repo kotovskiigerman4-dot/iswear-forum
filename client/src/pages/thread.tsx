@@ -17,6 +17,14 @@ export default function ThreadView() {
   const createPost = useCreatePost();
   const deletePost = useDeletePost();
   const deleteThread = useDeleteThread();
+  const updatePost = useMutation({
+  mutationFn: async ({ id, content }: { id: number; content: string }) => {
+    await apiRequest("PATCH", `/api/posts/${id}`, { content });
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: [`/api/threads/${id}`] });
+  },
+});
   
   const [content, setContent] = useState("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -87,23 +95,39 @@ export default function ThreadView() {
             <p className="text-xs text-muted-foreground mt-2">
               {format(new Date(thread.createdAt), 'PP pp')}
             </p>
-          </div>
-          {canDelete(thread.authorId) && (
-            <Button 
-              variant="destructive" 
-              size="sm"
-              onClick={() => {
-                if(confirm(leet("CONFIRM_PURGE_ENTIRE_THREAD?"))) {
-                  deleteThread.mutate({ id: thread.id, categoryId: thread.categoryId }, {
-                    onSuccess: () => setLocation(`/category/${thread.categoryId}`)
-                  });
-                }
-              }}
-            >
-              <Trash2 className="w-4 h-4 mr-2" /> {leet("PURGE_THREAD")}
-            </Button>
-          )}
-        </div>
+          <div className="flex gap-4 items-center">
+  {/* Кнопка РЕДАКТИРОВАНИЯ (автор или админ) */}
+  {(user?.id === post.authorId || user?.role === "ADMIN") && (
+    <button
+      onClick={() => {
+        const newContent = prompt(leet("3D17_P4YL04D_C0N73N7"), post.content);
+        if (newContent && newContent !== post.content) {
+          updatePost.mutate({ id: post.id, content: newContent });
+        }
+      }}
+      className="text-primary hover:text-white transition-colors text-[10px]"
+    >
+      [{leet("3D17")}]
+    </button>
+  )}
+
+  {/* Кнопка УДАЛЕНИЯ (кроме первого поста) */}
+  {canDelete(post.authorId) && index !== 0 && (
+    <button
+      onClick={() => {
+        if (confirm(leet("PURG3_D474_536M3N7?"))) {
+          deletePost.mutate({ id: post.id, threadId: thread.id });
+        }
+      }}
+      className="text-destructive hover:text-red-400 transition-colors flex items-center gap-1 text-[10px]"
+      disabled={deletePost.isPending}
+    >
+      <Trash2 className="w-3 h-3" />
+      {leet("D3L373")}
+    </button>
+  )}
+  <span className="opacity-30 text-[10px]">#{post.id}</span>
+</div>
 
         {/* Posts List */}
         <div className="space-y-4">
