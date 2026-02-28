@@ -2,15 +2,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import multer from "multer";
-import { createClient } from '@supabase/supabase-js';
 
-// Хелперы для проверки ролей
 const isStaff = (req: any) => req.isAuthenticated() && (req.user.role === "ADMIN" || req.user.role === "MODERATOR");
 const isAdmin = (req: any) => req.isAuthenticated() && req.user.role === "ADMIN";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Вызываем сидинг при запуске
   storage.seedCategories().catch(console.error);
 
   app.use((req, _res, next) => {
@@ -21,82 +17,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ ---
-  
-  // ФИКС: Добавляем роут /api/profile/:id (который запрашивает твой фронтенд)
   app.get("/api/profile/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-
-      const user = await storage.getUser(id);
-      if (!user) return res.status(404).json({ message: "U53R_N07_F0UND" });
-
-      const { passwordHash, ...safeUser } = user;
-      
-      res.json({
-        ...safeUser,
-        avatarUrl: user.avatarUrl || user.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${user.username}`,
-        applicationReason: user.applicationReason || user.application_reason,
-        lastSeen: user.lastSeen || user.last_seen
-      });
-    } catch (e) {
-      res.status(500).json({ message: "Error fetching profile" });
-    }
-  });
-
-  // ФИКС: Добавляем роут для тредов пользователя в профиле
-  app.get("/api/users/:id/threads", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-      const threads = await storage.getUserThreads(id);
-      res.json(threads);
-    } catch (e) {
-      res.status(500).json({ message: "Error fetching user threads" });
-    }
-  });
-
-  // Получение конкретного профиля (дублируем для совместимости с /api/users/:id)
-  app.get("/api/users/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       const user = await storage.getUser(id);
       if (!user) return res.status(404).json({ message: "U53R_N07_F0UND" });
       const { passwordHash, ...safeUser } = user;
       res.json({
         ...safeUser,
-        avatarUrl: user.avatarUrl || user.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${user.username}`,
-        applicationReason: user.applicationReason || user.application_reason,
+        avatarUrl: user.avatarUrl || user.avatar_url,
         lastSeen: user.lastSeen || user.last_seen
       });
     } catch (e) {
-      res.status(500).json({ message: "Error fetching user" });
+      res.status(500).json({ message: "Error" });
     }
   });
 
-  // Список всех пользователей (страница Users) - Исправляем "кривую" таблицу
   app.get("/api/users", async (req, res) => {
     try {
       const users = await storage.listUsers();
-      const safeUsers = users.map(u => ({
-          ...u,
-          avatarUrl: u.avatarUrl || u.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${u.username}`,
-          lastSeen: u.lastSeen || u.last_seen
-      }));
-      res.json(safeUsers);
+      res.json(users);
     } catch (e) {
       res.status(500).json({ message: "Error listing users" });
     }
   });
 
-  // --- ТРЕДЫ ---
+  // --- ТРЕДЫ (Создание с фиксом сообщения) ---
   app.post("/api/threads", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
+      const { title, categoryId, content, fileUrl } = req.body;
       const thread = await storage.createThread({
-        ...req.body,
+        title,
+        categoryId: Number(categoryId),
         authorId: req.user.id
+      });
+      await storage.createPost({
+        content,
+        threadId: thread.id,
+        authorId: req.user.id,
+        fileUrl: fileUrl || null
       });
       res.status(201).json(thread);
     } catch (e) {
@@ -104,25 +65,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- АДМИНКА И МОДЕРКА ---
-  app.get("/api/admin/users", async (req, res) => {
-    if (!isStaff(req)) return res.sendStatus(403);
-    const users = await storage.listUsers();
-    res.json(users);
+  app.get("/api/threads/:id", async (req, res) => {
+    try {
+      const thread = await storage.getThread(parseInt(req.params.id));
+      if (!thread) return res.status(404).json({ message: "Thread not found" });
+      res.json(thread);
+    } catch (e) {
+      res.status(500).json({ message: "Error" });
+    }
   });
 
-  app.patch("/api/admin/users/:id", async (req, res) => {
-    if (!isStaff(req)) return res.sendStatus(403);
-    const id = parseInt(req.params.id);
-    const updateData = { ...req.body };
-    if (!isAdmin(req) && updateData.role) {
-      delete updateData.role;
-    }
+  app.post("/api/posts", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
-      const updated = await storage.updateUser(id, updateData);
-      res.json(updated);
+      const post = await storage.createPost({
+        content: req.body.content,
+        threadId: Number(req.body.threadId),
+        authorId: req.user.id,
+        fileUrl: req.body.fileUrl || null
+      });
+      res.status(201).json(post);
     } catch (e) {
-      res.status(500).json({ message: "Update failed" });
+      res.status(400).json({ message: "Failed" });
     }
   });
 
@@ -132,36 +96,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(cats);
   });
 
-  app.get("/api/categories/:id", async (req, res) => {
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) {
-      const all = await storage.getCategories();
-      const catByName = all.find(c => c.name.toLowerCase() === req.params.id.toLowerCase());
-      if (catByName) return res.json(catByName);
-      return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
-    }
-    const category = await storage.getCategory(id);
-    if (!category) return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
-    res.json(category);
+  // --- АДМИНКА ---
+  app.get("/api/admin/users", async (req, res) => {
+    if (!isStaff(req)) return res.sendStatus(403);
+    const users = await storage.listUsers();
+    res.json(users);
   });
 
-  // --- ТРЕДЫ И УДАЛЕНИЕ ---
-  app.get("/api/threads/:id", async (req, res) => {
-    const thread = await storage.getThread(parseInt(req.params.id));
-    if (!thread) return res.status(404).json({ message: "Thread not found" });
-    res.json(thread);
-  });
-
-  app.delete("/api/threads/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const id = parseInt(req.params.id);
-    const thread = await storage.getThread(id);
-    if (!thread) return res.sendStatus(404);
-    if (!isStaff(req) && thread.authorId !== req.user.id) {
-      return res.sendStatus(403);
+  app.patch("/api/admin/users/:id", async (req, res) => {
+    if (!isStaff(req)) return res.sendStatus(403);
+    try {
+      const updated = await storage.updateUser(parseInt(req.params.id), req.body);
+      res.json(updated);
+    } catch (e) {
+      res.status(500).json({ message: "Update failed" });
     }
-    await storage.deleteThread(id);
-    res.sendStatus(204);
   });
 
   // --- СТАТИСТИКА ---
