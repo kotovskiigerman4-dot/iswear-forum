@@ -96,6 +96,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(cats);
   });
 
+  app.get("/api/categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid Category ID" });
+      
+      const category = await storage.getCategory(id);
+      if (!category) return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
+      
+      res.json(category);
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching category" });
+    }
+  });
+
   // --- АДМИНКА ---
   app.get("/api/admin/users", async (req, res) => {
     if (!isStaff(req)) return res.sendStatus(403);
