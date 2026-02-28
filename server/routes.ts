@@ -16,6 +16,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
 
+  // Вспомогательная функция для поиска упоминаний и создания уведомлений
+  async function handleMentions(content: string, threadId: number, postId: number, authorId: number) {
+    const mentions = content.match(/@(\w+)/g);
+    if (mentions) {
+      const uniqueUsernames = [...new Set(mentions.map(m => m.substring(1)))];
+      for (const username of uniqueUsernames) {
+        const mentionedUser = await storage.getUserByUsername(username);
+        // Не уведомляем самого себя
+        if (mentionedUser && mentionedUser.id !== authorId) {
+          await storage.createNotification({
+            userId: mentionedUser.id,
+            fromUserId: authorId,
+            threadId: threadId,
+            postId: postId,
+            type: "mention"
+          });
+        }
+      }
+    }
+  }
+
   // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ ---
   app.get("/api/profile/:id", async (req, res) => {
     try {
@@ -43,7 +64,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- ТРЕДЫ (Создание с фиксом сообщения) ---
+  // --- ТРЕДЫ ---
   app.post("/api/threads", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
@@ -53,12 +74,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         categoryId: Number(categoryId),
         authorId: req.user.id
       });
-      await storage.createPost({
+      const post = await storage.createPost({
         content,
         threadId: thread.id,
         authorId: req.user.id,
         fileUrl: fileUrl || null
       });
+
+      // Добавлено: Уведомления для первого поста в треде
+      await handleMentions(content, thread.id, post.id, req.user.id);
+
       res.status(201).json(thread);
     } catch (e) {
       res.status(400).json({ message: "Failed to create thread" });
@@ -75,6 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // --- ПОСТЫ (С уведомлениями) ---
   app.post("/api/posts", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
@@ -84,6 +110,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         authorId: req.user.id,
         fileUrl: req.body.fileUrl || null
       });
+
+      // Добавлено: Поиск упоминаний в тексте поста
+      await handleMentions(req.body.content, post.threadId, post.id, req.user.id);
+
       res.status(201).json(post);
     } catch (e) {
       res.status(400).json({ message: "Failed" });
@@ -100,10 +130,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid Category ID" });
-      
       const category = await storage.getCategory(id);
       if (!category) return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
-      
       res.json(category);
     } catch (e) {
       res.status(500).json({ message: "Error fetching category" });
@@ -139,30 +167,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-// --- УВЕДОМЛЕНИЯ ---
-app.get("/api/notifications", async (req, res) => {
-  if (!req.isAuthenticated()) return res.sendStatus(401);
-  const notifs = await storage.getNotifications(req.user.id);
-  res.json(notifs);
-});
+  // --- УВЕДОМЛЕНИЯ ---
+  app.get("/api/notifications", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const notifs = await storage.getNotifications(req.user.id);
+    res.json(notifs);
+  });
 
-app.post("/api/notifications/read", async (req, res) => {
-  if (!req.isAuthenticated()) return res.sendStatus(401);
-  await storage.markNotificationsRead(req.user.id);
-  res.sendStatus(200);
-});
+  app.post("/api/notifications/read", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    await storage.markNotificationsRead(req.user.id);
+    res.sendStatus(200);
+  });
 
+  // --- ПОИСК ---
   app.get("/api/search", async (req, res) => {
-  try {
-    const query = req.query.q as string;
-    if (!query) return res.json([]);
-    
-    const results = await storage.searchThreads(query);
-    res.json(results);
-  } catch (e) {
-    res.status(500).json({ message: "Search error" });
-  }
-});
+    try {
+      const query = req.query.q as string;
+      if (!query) return res.json([]);
+      const results = await storage.searchThreads(query);
+      res.json(results);
+    } catch (e) {
+      res.status(500).json({ message: "Search error" });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
