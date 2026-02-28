@@ -38,6 +38,9 @@ export interface IStorage {
   deletePost(id: number): Promise<void>;
   seedCategories(): Promise<void>;
   updatePost(id: number, updates: Partial<typeof posts.$inferInsert>): Promise<Post>;
+  createNotification(notif: InsertNotification): Promise<Notification>;
+getNotifications(userId: number): Promise<Notification[]>;
+markNotificationsRead(userId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
