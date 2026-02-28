@@ -7,6 +7,8 @@ import { Link, useParams, useLocation } from "wouter";
 import { leet } from "@/lib/leet";
 import { format } from "date-fns";
 import { Trash2, Reply, Paperclip, FileText, X } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function ThreadView() {
   const { id } = useParams();
@@ -17,14 +19,15 @@ export default function ThreadView() {
   const createPost = useCreatePost();
   const deletePost = useDeletePost();
   const deleteThread = useDeleteThread();
+
   const updatePost = useMutation({
-  mutationFn: async ({ id, content }: { id: number; content: string }) => {
-    await apiRequest("PATCH", `/api/posts/${id}`, { content });
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: [`/api/threads/${id}`] });
-  },
-});
+    mutationFn: async ({ postId, content }: { postId: number; content: string }) => {
+      await apiRequest("PATCH", `/api/posts/${postId}`, { content });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/threads/${id}`] });
+    },
+  });
   
   const [content, setContent] = useState("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -79,6 +82,14 @@ export default function ThreadView() {
     return user.id === authorId;
   };
 
+  const handleDeleteThread = async () => {
+    if (confirm(leet("PURGE_ENTIRE_THREAD?"))) {
+      deleteThread.mutate(Number(id), {
+        onSuccess: () => setLocation("/")
+      });
+    }
+  };
+
   if (isLoading) return <Layout><div className="animate-pulse h-64 bg-card" /></Layout>;
   if (!thread) return <Layout><div className="text-center text-destructive p-8">{leet("DATABANK_CORRUPTED")}</div></Layout>;
 
@@ -95,39 +106,19 @@ export default function ThreadView() {
             <p className="text-xs text-muted-foreground mt-2">
               {format(new Date(thread.createdAt), 'PP pp')}
             </p>
-          <div className="flex gap-4 items-center">
-  {/* Кнопка РЕДАКТИРОВАНИЯ (автор или админ) */}
-  {(user?.id === post.authorId || user?.role === "ADMIN") && (
-    <button
-      onClick={() => {
-        const newContent = prompt(leet("3D17_P4YL04D_C0N73N7"), post.content);
-        if (newContent && newContent !== post.content) {
-          updatePost.mutate({ id: post.id, content: newContent });
-        }
-      }}
-      className="text-primary hover:text-white transition-colors text-[10px]"
-    >
-      [{leet("3D17")}]
-    </button>
-  )}
-
-  {/* Кнопка УДАЛЕНИЯ (кроме первого поста) */}
-  {canDelete(post.authorId) && index !== 0 && (
-    <button
-      onClick={() => {
-        if (confirm(leet("PURG3_D474_536M3N7?"))) {
-          deletePost.mutate({ id: post.id, threadId: thread.id });
-        }
-      }}
-      className="text-destructive hover:text-red-400 transition-colors flex items-center gap-1 text-[10px]"
-      disabled={deletePost.isPending}
-    >
-      <Trash2 className="w-3 h-3" />
-      {leet("D3L373")}
-    </button>
-  )}
-  <span className="opacity-30 text-[10px]">#{post.id}</span>
-</div>
+          </div>
+          
+          {(user?.role === "ADMIN" || user?.role === "MODERATOR") && (
+            <Button 
+              variant="destructive" 
+              size="sm" 
+              onClick={handleDeleteThread}
+              className="font-display text-[10px]"
+            >
+              [PURGE_THREAD]
+            </Button>
+          )}
+        </div>
 
         {/* Posts List */}
         <div className="space-y-4">
@@ -153,7 +144,23 @@ export default function ThreadView() {
                 <div className="p-3 border-b border-border/50 text-xs text-muted-foreground flex justify-between bg-card/30">
                   <span>{format(new Date(post.createdAt), 'PP pp')}</span>
                   <div className="flex gap-4 items-center">
-                    {/* Кнопка удаления появляется у всех постов, КРОМЕ первого (индекс 0) */}
+                    
+                    {/* Кнопка EDIT (автор или админ) */}
+                    {(user?.id === post.authorId || user?.role === "ADMIN") && (
+                      <button
+                        onClick={() => {
+                          const newContent = prompt(leet("EDIT_POST_CONTENT"), post.content);
+                          if (newContent && newContent !== post.content) {
+                            updatePost.mutate({ postId: post.id, content: newContent });
+                          }
+                        }}
+                        className="text-primary hover:text-white transition-colors text-[10px]"
+                      >
+                        [{leet("EDIT")}]
+                      </button>
+                    )}
+
+                    {/* Кнопка DELETE (кроме первого поста) */}
                     {canDelete(post.authorId) && index !== 0 && (
                       <button 
                         onClick={() => {
@@ -161,13 +168,13 @@ export default function ThreadView() {
                             deletePost.mutate({ id: post.id, threadId: thread.id });
                           }
                         }}
-                        className="text-destructive hover:text-red-400 transition-colors flex items-center gap-1"
+                        className="text-destructive hover:text-red-400 transition-colors flex items-center gap-1 text-[10px]"
                         disabled={deletePost.isPending}
                       >
                         <Trash2 className="w-3 h-3" /> {leet("DELETE")}
                       </button>
                     )}
-                    <span className="opacity-30">#{post.id}</span>
+                    <span className="opacity-30 text-[10px]">#{post.id}</span>
                   </div>
                 </div>
                 
@@ -209,66 +216,4 @@ export default function ThreadView() {
           <Card className="p-4 border-primary/30 mt-8 relative overflow-hidden bg-card/40">
             <div className="absolute top-0 left-0 w-1 h-full bg-primary animate-pulse" />
             <h3 className="text-lg text-primary flex items-center gap-2 mb-4 ml-2 font-display">
-              <Reply className="w-5 h-5" /> {leet("TRANSMIT_REPLY")}
-            </h3>
-            <form onSubmit={handleReply} className="space-y-4 ml-2">
-              <Textarea 
-                value={content} 
-                onChange={e => setContent(e.target.value)} 
-                required 
-                placeholder="Input data payload here..." 
-                rows={4} 
-                className="bg-background/50 border-primary/20 focus:border-primary"
-              />
-              
-              <div className="flex flex-wrap items-center gap-4">
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileUpload} 
-                  accept=".png,.txt" 
-                  className="hidden" 
-                />
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className="border-primary/40 hover:bg-primary/10"
-                >
-                  <Paperclip className="w-4 h-4 mr-2" />
-                  {isUploading ? leet("UPLOADING...") : leet("ATTACH_FILE")}
-                </Button>
-
-                {fileUrl && (
-                  <div className="flex items-center gap-2 text-xs text-primary bg-primary/10 px-3 py-1.5 border border-primary/30 rounded-full">
-                    <span className="max-w-[150px] truncate">{fileUrl.split('/').pop()}</span>
-                    <button type="button" onClick={() => setFileUrl(null)} className="ml-1">
-                      <X className="w-3 h-3 hover:text-destructive transition-colors" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <Button 
-                type="submit" 
-                className="w-full md:w-auto px-8"
-                disabled={createPost.isPending || isUploading}
-              >
-                {createPost.isPending ? leet("SENDING...") : leet("SEND_PAYLOAD")}
-              </Button>
-            </form>
-          </Card>
-        ) : (
-          <Card className="p-8 text-center border-dashed border-primary/20 text-muted-foreground mt-8 bg-card/20">
-            <Link href="/auth" className="text-primary hover:underline font-bold">
-              {leet("AUTHENTICATE")}
-            </Link> 
-            {" "}{leet("TO_TRANSMIT_DATA")}
-          </Card>
-        )}
-      </div>
-    </Layout>
-  );
-}
+              <Reply className="w-5 h-5" /> {leet("TRANSM
