@@ -16,6 +16,9 @@ import Profile from "@/pages/profile";
 import Admin from "@/pages/admin";
 import UsersList from "@/pages/users-list";
 import NotFound from "@/pages/not-found";
+// ДОБАВЛЕНО: Импорт новых страниц
+import NotificationsPage from "@/pages/notifications-page";
+import SearchPage from "@/pages/search-page";
 
 function Router() {
   const { user, isLoading } = useAuth();
@@ -79,6 +82,10 @@ function Router() {
       {/* ПРАВКА ТУТ: Добавляем оба варианта пути для профиля */}
       <Route path="/user/:id" component={Profile} />
       <Route path="/profile/:id" component={Profile} />
+      
+      {/* ДОБАВЛЕНО: Роуты поиска и уведомлений */}
+      <Route path="/notifications" component={NotificationsPage} />
+      <Route path="/search" component={SearchPage} />
       
       <Route path="/users" component={UsersList} />
       <Route path="/admin" component={Admin} />
