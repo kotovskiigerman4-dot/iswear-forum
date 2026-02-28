@@ -161,3 +161,19 @@ export type AdminUpdateUserRequest = {
   status?: "PENDING" | "APPROVED" | "REJECTED";
   isBanned?: boolean;
 };
+
+// === NOTIFICATIONS TABLE ===
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  fromUserId: integer("from_user_id").notNull(),
+  threadId: integer("thread_id").notNull(),
+  postId: integer("post_id").notNull(),
+  type: text("type").default("mention"),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// === TYPES FOR NOTIFICATIONS ===
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
