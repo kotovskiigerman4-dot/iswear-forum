@@ -65,7 +65,9 @@ export class DatabaseStorage implements IStorage {
       return {
         ...user,
         avatarUrl: user.avatarUrl || user.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${user.username}`,
-        applicationReason: user.applicationReason || user.application_reason
+        applicationReason: user.applicationReason || user.application_reason,
+        role: user.role || "MEMBER",
+        status: user.status || "APPROVED"
       };
     } catch (e) {
       console.error("Storage: Error getting user", e);
@@ -132,9 +134,10 @@ export class DatabaseStorage implements IStorage {
 
   async getUserThreads(userId: number): Promise<Thread[]> {
     const cleanId = Math.floor(Number(userId));
+    // Пытаемся найти по authorId или author_id
     return await db.select()
       .from(threads)
-      .where(eq(threads.authorId, cleanId))
+      .where(sql`${threads.authorId} = ${cleanId} OR ${threads.author_id} = ${cleanId}`)
       .orderBy(desc(threads.createdAt));
   }
 
@@ -155,14 +158,18 @@ export class DatabaseStorage implements IStorage {
 
   private async enrichThreads(catThreads: Thread[]): Promise<any[]> {
     return await Promise.all(catThreads.map(async t => {
-      const [author] = await db.select().from(users).where(eq(users.id, t.authorId));
+      const authorId = t.authorId || t.author_id;
+      const [author] = await db.select().from(users).where(eq(users.id, authorId));
       const [postCount] = await db.select({ value: sql<number>`count(*)` }).from(posts).where(eq(posts.threadId, t.id));
+      
       const safeAuthor = author ? (({ passwordHash, ...s }) => ({
           ...s,
           avatarUrl: s.avatarUrl || s.avatar_url
       }))(author) : null;
+
       return {
         ...t,
+        authorId, // Гарантируем наличие поля для фронтенда
         author: safeAuthor,
         replyCount: Math.max(0, Number(postCount.value) - 1)
       };
@@ -173,7 +180,13 @@ export class DatabaseStorage implements IStorage {
     const allCategories = await db.select().from(categories).orderBy(categories.position);
     const result: CategoryWithThreads[] = [];
     for (const cat of allCategories) {
-      const catThreads = await db.select().from(threads).where(eq(threads.categoryId, cat.id)).orderBy(desc(threads.createdAt)).limit(5);
+      // Ищем треды, проверяя оба варианта колонки категории
+      const catThreads = await db.select()
+        .from(threads)
+        .where(sql`${threads.categoryId} = ${cat.id} OR ${threads.category_id} = ${cat.id}`)
+        .orderBy(desc(threads.createdAt))
+        .limit(5);
+      
       const enrichedThreads = await this.enrichThreads(catThreads);
       result.push({ ...cat, threads: enrichedThreads });
     }
@@ -183,7 +196,13 @@ export class DatabaseStorage implements IStorage {
   async getCategory(id: number): Promise<CategoryWithThreads | undefined> {
     const [cat] = await db.select().from(categories).where(eq(categories.id, id));
     if (!cat) return undefined;
-    const catThreads = await db.select().from(threads).where(eq(threads.categoryId, cat.id)).orderBy(desc(threads.createdAt));
+
+    // Ищем треды категории, учитывая snake_case в БД
+    const catThreads = await db.select()
+      .from(threads)
+      .where(sql`${threads.categoryId} = ${id} OR ${threads.category_id} = ${id}`)
+      .orderBy(desc(threads.createdAt));
+    
     const enrichedThreads = await this.enrichThreads(catThreads);
     return { ...cat, threads: enrichedThreads };
   }
@@ -191,21 +210,35 @@ export class DatabaseStorage implements IStorage {
   async getThread(id: number): Promise<ThreadWithPosts | undefined> {
     const [thread] = await db.select().from(threads).where(eq(threads.id, id));
     if (!thread) return undefined;
-    const [author] = await db.select().from(users).where(eq(users.id, thread.authorId));
-    const [category] = await db.select().from(categories).where(eq(categories.id, thread.categoryId));
-    const threadPosts = await db.select().from(posts).where(eq(posts.threadId, id)).orderBy(posts.createdAt);
+
+    const authorId = thread.authorId || thread.author_id;
+    const catId = thread.categoryId || thread.category_id;
+
+    const [author] = await db.select().from(users).where(eq(users.id, authorId));
+    const [category] = await db.select().from(categories).where(eq(categories.id, catId));
+    
+    const threadPosts = await db.select()
+      .from(posts)
+      .where(sql`${posts.threadId} = ${id} OR ${posts.thread_id} = ${id}`)
+      .orderBy(posts.createdAt);
+
     const enrichedPosts = await Promise.all(threadPosts.map(async p => {
-      const [pAuthor] = await db.select().from(users).where(eq(users.id, p.authorId));
+      const pAuthorId = p.authorId || p.author_id;
+      const [pAuthor] = await db.select().from(users).where(eq(users.id, pAuthorId));
       return { 
         ...p, 
+        authorId: pAuthorId,
         author: pAuthor ? (({ passwordHash, ...s }) => ({
             ...s,
             avatarUrl: s.avatarUrl || s.avatar_url
         }))(pAuthor) : null 
       };
     }));
+
     return {
       ...thread,
+      authorId,
+      categoryId: catId,
       author: author ? (({ passwordHash, ...s }) => ({
           ...s,
           avatarUrl: s.avatarUrl || s.avatar_url
@@ -223,7 +256,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteThread(id: number): Promise<void> {
     const cleanId = Math.floor(Number(id));
-    await db.delete(posts).where(eq(posts.threadId, cleanId));
+    await db.delete(posts).where(sql`${posts.threadId} = ${cleanId} OR ${posts.thread_id} = ${cleanId}`);
     await db.delete(threads).where(eq(threads.id, cleanId));
   }
 
