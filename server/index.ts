@@ -12,7 +12,7 @@ app.set("trust proxy", 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// 1. ЛОГГЕР (Оставляем как есть, он полезен)
+// 1. ЛОГГЕР
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -45,21 +45,17 @@ app.use(helmet({
     // 3. Сначала АУТЕНТИФИКАЦИЯ
     setupAuth(app);
 
-    // 4. РЕГИСТРАЦИЯ РОУТОВ (Должна быть ДО статики и заглушек)
+    // 4. РЕГИСТРАЦИЯ РОУТОВ
     const httpServer = await registerRoutes(app);
 
-    // 5. ВАЖНО: УБИРАЕМ блок app.use("/api", ...) который был у тебя под номером 7.
-    // Вместо него ставим роуты фронтенда ТОЛЬКО если это не API запрос.
-
     if (process.env.NODE_ENV === "production") {
-      // Специальный хак для SPA на Render:
       // Сначала пытаемся отдать статику
       serveStatic(app);
       
-      // Если это не API и файл не найден — отдаем index.html (для путей типа /profile/3)
-      app.get('*', (req, res, next) => {
+      // ИСПРАВЛЕНИЕ ТУТ: Заменили '*' на '(.*)' для совместимости с path-to-regexp v6+
+      app.get('(.*)', (req, res, next) => {
         if (req.path.startsWith('/api')) {
-          return next(); // Не трогаем API запросы
+          return next(); 
         }
         res.sendFile(path.resolve(__dirname, '..', 'client', 'dist', 'index.html'));
       });
