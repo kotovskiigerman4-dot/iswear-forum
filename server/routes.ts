@@ -181,17 +181,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- ПОИСК ---
-  app.get("/api/search", async (req, res) => {
-    try {
-      const query = req.query.q as string;
-      if (!query) return res.json([]);
-      const results = await storage.searchThreads(query);
-      res.json(results);
-    } catch (e) {
-      res.status(500).json({ message: "Search error" });
-    }
-  });
-
-  const httpServer = createServer(app);
-  return httpServer;
-}
+app.get("/api/search", async (req, res) => {
+  try {
+    const query = req.query.q as string;
+    if (!query) return res.json({ threads: [], users: [] });
+    
+    const [threads, users] = await Promise.all([
+      storage.searchThreads(query),
+      storage.searchUsers(query)
+    ]);
+    
+    res.json({ threads, users });
+  } catch (e) {
+    res.status(500).json({ message: "Search error" });
+  }
+});
