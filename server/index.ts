@@ -25,16 +25,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// 2. HELMET
+// @ts-nocheck
+// ... (остальной импорт)
+
+// 2. HELMET (Обновленный вариант)
 app.use(helmet({
   contentSecurityPolicy: {
+    useDefaults: true, // Загружаем стандартные безопасные настройки
     directives: {
       "default-src": ["'self'"],
-      "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Разрешаем eval и инлайн скрипты
       "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      "font-src": ["'self'", "https://fonts.gstatic.com"],
+      "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
       "img-src": ["'self'", "data:", "https://*.supabase.co", "https:", "https://api.dicebear.com"],
-      "connect-src": ["'self'", "https://*.supabase.co", "https://iswear-forum.onrender.com"],
+      "connect-src": ["'self'", "https://*.supabase.co", "https://iswear-forum.onrender.com", "wss://iswear-forum.onrender.com"],
+      "upgrade-insecure-requests": null, // Отключаем принудительный апгрейд на HTTPS, если Render сам об этом заботится
     },
   },
   crossOriginResourcePolicy: { policy: "cross-origin" }
