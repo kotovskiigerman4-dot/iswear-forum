@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, Button, Input, Textarea } from "@/components/ui/cyber-components";
 import { leet } from "@/lib/leet";
-import { Terminal, AlertCircle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Redirect } from "wouter";
 
 export default function Auth() {
@@ -22,18 +22,28 @@ export default function Auth() {
     if (mode === "login") {
       login({ username, password });
     } else {
-      // Теперь поле applicationReason точно отправляется
       register({ username, password, email, icq, applicationReason });
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-black">
+      {/* Фоновое свечение */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-3xl pointer-events-none" />
       
       <Card className="w-full max-w-md p-8 border-primary/50 shadow-[0_0_30px_rgba(0,255,159,0.1)] relative z-10">
         <div className="flex flex-col items-center mb-8">
-          <Terminal className="w-12 h-12 text-primary mb-4" />
+          
+          {/* БОЛЬШОЙ ЧЕРЕП ПО ЦЕНТРУ */}
+          <div className="relative group mb-6">
+            <div className="absolute -inset-2 bg-primary/20 rounded-full blur-xl opacity-30 group-hover:opacity-60 transition duration-1000"></div>
+            <img 
+              src="https://media.discordapp.net/attachments/1293910911240634390/1477790740582105098/favicon.png?ex=69a60b60&is=69a4b9e0&hm=5dd412db36f37b9e2fa7023f90820a09787af31955f897e492d6ee6cbe9103c2&=&format=webp&quality=lossless&width=20&height=20" 
+              alt="SYSTEM_SKULL" 
+              className="relative w-28 h-28 md:w-32 md:h-32 object-contain filter drop-shadow-[0_0_15px_rgba(0,255,159,0.5)] animate-pulse"
+            />
+          </div>
+
           <h1 className="text-3xl font-display text-primary tracking-widest">{leet("I-SWEA")}</h1>
           <p className="text-xs text-muted-foreground mt-2 uppercase tracking-widest">{leet("SECURE_PORTAL")}</p>
         </div>
