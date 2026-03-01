@@ -4,7 +4,7 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { eq, desc, sql, and } from "drizzle-orm";
 import { 
-  users, categories, threads, posts, notifications,
+  users, categories, threads, posts, notifications, profileComments, // ДОБАВИЛИ СЮДА
   type User, type Category, type Thread, type Post, 
   type CategoryWithThreads, type ThreadWithPosts, type SafeUser,
   type Notification, type InsertNotification 
@@ -57,7 +57,6 @@ export class DatabaseStorage implements IStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     if (user) {
-      // Совместимость хешей для логина
       user.passwordHash = user.passwordHash || user.password_hash || user.passwordHashOld || "";
     }
     return user;
@@ -73,11 +72,8 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // ОБНОВЛЕННЫЙ МЕТОД ДЛЯ АДМИНКИ И ПРОФИЛЯ
   async updateUser(id: number, updates: any): Promise<User> {
     const finalUpdates = { ...updates };
-    
-    // 1. Синхронизация аватарок/баннеров (для всех имен колонок в БД)
     if (updates.avatarUrl) {
       finalUpdates.avatarUrlAlt = updates.avatarUrl;
       finalUpdates.avatar_url = updates.avatarUrl; 
@@ -86,12 +82,9 @@ export class DatabaseStorage implements IStorage {
       finalUpdates.bannerUrlAlt = updates.bannerUrl;
       finalUpdates.banner_url = updates.bannerUrl;
     }
-
-    // 2. Обработка бана (чтобы не было конфликтов с булевыми значениями)
     if (updates.isBanned !== undefined) {
       finalUpdates.isBanned = !!updates.isBanned;
     }
-    
     const [user] = await db.update(users).set(finalUpdates).where(eq(users.id, id)).returning();
     if (!user) throw new Error(`User ${id} not found`);
     return user;
@@ -131,35 +124,35 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserPassword(id: number, newPasswordHash: string): Promise<void> {
-    // Обновляем пароль сразу во всех возможных колонках
     await db.update(users).set({ 
       passwordHash: newPasswordHash,
       password_hash: newPasswordHash 
     }).where(eq(users.id, id));
   }
 
+  // ИСПРАВЛЕННЫЕ МЕТОДЫ (УБРАЛИ _)
   async getProfileComments(profileId: number): Promise<any[]> {
-  return await db
-    .select({
-      id: profile_comments.id,
-      content: profile_comments.content,
-      createdAt: profile_comments.createdAt,
-      author: {
-        id: users.id,
-        username: users.username,
-        avatarUrl: users.avatarUrl
-      }
-    })
-    .from(profile_comments)
-    .where(eq(profile_comments.profileId, profileId))
-    .leftJoin(users, eq(profile_comments.authorId, users.id))
-    .orderBy(desc(profile_comments.createdAt));
-}
+    return await db
+      .select({
+        id: profileComments.id,
+        content: profileComments.content,
+        createdAt: profileComments.createdAt,
+        author: {
+          id: users.id,
+          username: users.username,
+          avatarUrl: users.avatarUrl
+        }
+      })
+      .from(profileComments)
+      .where(eq(profileComments.profileId, profileId))
+      .leftJoin(users, eq(profileComments.authorId, users.id))
+      .orderBy(desc(profileComments.createdAt));
+  }
 
-async createProfileComment(data: any): Promise<any> {
-  const [comment] = await db.insert(profile_comments).values(data).returning();
-  return comment;
-}
+  async createProfileComment(data: any): Promise<any> {
+    const [comment] = await db.insert(profileComments).values(data).returning();
+    return comment;
+  }
 
   // --- ТРЕДЫ И КАТЕГОРИИ ---
   private async enrichThreads(catThreads: Thread[]): Promise<any[]> {
@@ -180,14 +173,12 @@ async createProfileComment(data: any): Promise<any> {
   async getCategories(): Promise<CategoryWithThreads[]> {
     const allCategories = await db.select().from(categories).orderBy(categories.position);
     const result: CategoryWithThreads[] = [];
-    
     for (const cat of allCategories) {
       const catThreads = await db.select()
         .from(threads)
         .where(eq(threads.categoryId, cat.id))
         .orderBy(desc(threads.createdAt))
         .limit(5);
-      
       const enrichedThreads = await this.enrichThreads(catThreads);
       result.push({ ...cat, threads: enrichedThreads });
     }
@@ -197,12 +188,10 @@ async createProfileComment(data: any): Promise<any> {
   async getCategory(id: number): Promise<CategoryWithThreads | undefined> {
     const [cat] = await db.select().from(categories).where(eq(categories.id, id));
     if (!cat) return undefined;
-
     const catThreads = await db.select()
       .from(threads)
       .where(eq(threads.categoryId, id))
       .orderBy(desc(threads.createdAt));
-
     const enrichedThreads = await this.enrichThreads(catThreads);
     return { ...cat, threads: enrichedThreads };
   }
@@ -217,23 +206,16 @@ async createProfileComment(data: any): Promise<any> {
   async getThread(id: number): Promise<ThreadWithPosts | undefined> {
     const [thread] = await db.select().from(threads).where(eq(threads.id, id));
     if (!thread) return undefined;
-
     const [author] = await db.select().from(users).where(eq(users.id, thread.authorId));
     const [category] = await db.select().from(categories).where(eq(categories.id, thread.categoryId));
-    
     const threadPosts = await db.select()
       .from(posts)
       .where(eq(posts.threadId, id))
       .orderBy(posts.createdAt);
-
     const enrichedPosts = await Promise.all(threadPosts.map(async p => {
       const [pAuthor] = await db.select().from(users).where(eq(users.id, p.authorId));
-      return {
-        ...p,
-        author: pAuthor ? this.toSafeUser(pAuthor) : null
-      };
+      return { ...p, author: pAuthor ? this.toSafeUser(pAuthor) : null };
     }));
-
     return {
       ...thread,
       author: author ? this.toSafeUser(author) : null,
@@ -266,7 +248,6 @@ async createProfileComment(data: any): Promise<any> {
       .limit(50);
   }
 
-  // --- ПОСТЫ ---
   async createPost(insertPost: any): Promise<Post> {
     const [post] = await db.insert(posts).values(insertPost).returning();
     return post;
