@@ -20,22 +20,18 @@ export default function Profile() {
   const { user } = useAuth();
   const updateProfile = useUpdateProfile();
   
-  // Состояния для комментариев
   const [commentText, setCommentText] = useState("");
 
-  // Запрос на темы пользователя
   const { data: userThreads } = useQuery({
     queryKey: [`/api/users/${userId}/threads`],
     enabled: !!userId
   });
 
-  // Запрос на комментарии в профиле
   const { data: comments = [] } = useQuery({
     queryKey: [`/api/profile/${userId}/comments`],
     enabled: !!userId
   });
 
-  // Мутация для отправки комментария
   const postCommentMutation = useMutation({
     mutationFn: async (content: string) => {
       const res = await apiRequest("POST", `/api/profile/${userId}/comments`, { content });
@@ -89,25 +85,6 @@ export default function Profile() {
     return <span className="text-muted-foreground">{diffInMinutes < 60 ? `${diffInMinutes}M AGO` : format(lastSeen, 'HH:mm dd.MM')}</span>;
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'banner') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (!res.ok) throw new Error("Upload failed");
-      const data = await res.json();
-      if (type === 'avatar') setAvatarUrl(data.url);
-      if (type === 'banner') setBannerUrl(data.url);
-    } catch (err) {
-      setUpdateError("System Error: File rejection.");
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
     setUpdateError(null);
@@ -131,13 +108,8 @@ export default function Profile() {
     return (
       <Layout>
         <div className="max-w-2xl mx-auto mt-20 p-8 border border-destructive/50 bg-destructive/5 rounded-none relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-destructive animate-pulse" />
           <AlertCircle className="w-12 h-12 text-destructive mb-4" />
           <h2 className="text-2xl font-display text-destructive mb-2">{leet("ACCESS_DENIED_OR_CORRUPTED")}</h2>
-          <p className="text-muted-foreground font-mono text-sm mb-6">
-            TERMINAL_ID: {id} <br />
-            STATUS: {error ? "REMOTE_REJECTION" : "NODE_NOT_FOUND"}
-          </p>
           <Button className="mt-6" variant="outline" onClick={() => window.location.reload()}>
             {leet("RETRY_CONNECTION")}
           </Button>
@@ -173,16 +145,12 @@ export default function Profile() {
 
           <div className="max-w-7xl mx-auto px-8 relative">
             <div className="flex flex-col md:flex-row items-start md:items-end gap-6 -mt-16 md:-mt-20">
-              <div className="relative group">
-                <div className="w-32 h-32 md:w-40 md:h-40 bg-card border-2 border-primary overflow-hidden z-10 shadow-[0_0_25px_rgba(0,255,159,0.3)] ring-8 ring-background">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-secondary">
-                      <UserIcon className="w-16 h-16 text-muted-foreground" />
-                    </div>
-                  )}
-                </div>
+              <div className="w-32 h-32 md:w-40 md:h-40 bg-card border-2 border-primary overflow-hidden z-10 shadow-[0_0_25px_rgba(0,255,159,0.3)] ring-8 ring-background">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-secondary text-muted-foreground font-mono">NO_IMG</div>
+                )}
               </div>
 
               <div className="pb-2 flex-1">
@@ -190,7 +158,6 @@ export default function Profile() {
                   <h1 className="text-4xl md:text-5xl text-primary font-display tracking-tighter drop-shadow-[0_0_10px_rgba(0,255,159,0.5)]">
                     {profile.username}
                   </h1>
-                  {profile.role === "ADMIN" && <Shield className="w-6 h-6 text-accent animate-pulse" />}
                 </div>
                 <div className="mt-2 flex items-center gap-4">
                   <RoleBadge role={profile.role} />
@@ -212,46 +179,30 @@ export default function Profile() {
                 </h3>
                 <form onSubmit={handleUpdate} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">{leet("AVATAR_LINK")}</label>
-                      <Input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="https://..." className="bg-black/20" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">{leet("BANNER_LINK")}</label>
-                      <Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} placeholder="https://..." className="bg-black/20" />
-                    </div>
+                    <Input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="Avatar URL" className="bg-black/20" />
+                    <Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} placeholder="Banner URL" className="bg-black/20" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">NETWORK_ID (ICQ)</label>
-                    <Input value={icq} onChange={e => setIcq(e.target.value)} placeholder="UIN..." className="bg-black/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">{leet("BIO_DATA")}</label>
-                    <Textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} className="bg-black/20 font-mono text-sm" />
-                  </div>
+                  <Input value={icq} onChange={e => setIcq(e.target.value)} placeholder="Network ID" className="bg-black/20" />
+                  <Textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} className="bg-black/20" />
                   <div className="flex gap-3">
-                    <Button type="submit" className="flex-1" disabled={updateProfile.isPending}>
-                      {leet("SAVE_CHANGES")}
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={() => setIsEditing(false)}>
-                      {leet("CANCEL")}
-                    </Button>
+                    <Button type="submit" className="flex-1">{leet("SAVE_CHANGES")}</Button>
+                    <Button type="button" variant="ghost" onClick={() => setIsEditing(false)}>{leet("CANCEL")}</Button>
                   </div>
                 </form>
               </Card>
             ) : (
               <div className="space-y-6">
-                <Card className="p-6 bg-card/20 border-primary/10 relative group overflow-hidden">
+                <Card className="p-6 bg-card/20 border-primary/10 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
                   <h3 className="text-primary text-[10px] uppercase mb-4 tracking-[0.3em] font-bold border-b border-primary/20 pb-2">
                     {leet("USER_INTEL")}
                   </h3>
-                  <div className="whitespace-pre-wrap text-foreground/90 font-mono text-sm min-h-[100px]">
+                  <div className="whitespace-pre-wrap text-foreground/90 font-mono text-sm min-h-[60px]">
                     {profile.bio || leet("NO_ENCRYPTED_DATA_FOUND")}
                   </div>
                 </Card>
 
-                {/* PROFILE WALL / COMMENTS */}
+                {/* WALL / COMMENTS */}
                 <div className="mt-8 border border-primary/20 bg-black/40 p-6">
                   <h3 className="text-primary font-display mb-4 tracking-widest flex items-center gap-2 text-sm uppercase">
                     <Terminal className="w-4 h-4" /> {leet("DATA_FEED_COMMENTS")}
@@ -277,23 +228,29 @@ export default function Profile() {
                     </div>
                   )}
 
-                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                  <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                     {comments.length === 0 ? (
                       <p className="text-[10px] text-muted-foreground italic">{leet("NO_FEED_DATA_AVAILABLE")}</p>
                     ) : (
                       comments.map((comment) => (
-                        <div key={comment.id} className="border-l-2 border-primary/10 pl-4 py-2 bg-white/5">
-                          <div className="flex items-center gap-2 mb-1">
+                        <div key={comment.id} className="border-l-2 border-primary/20 pl-4 py-3 bg-primary/5 transition-all hover:bg-primary/10">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
                             <Link href={`/user/${comment.author.id}`}>
                               <span className="text-primary font-bold text-[10px] cursor-pointer hover:underline">
                                 {comment.author.username}
                               </span>
                             </Link>
-                            <span className="text-[8px] text-muted-foreground">
+
+                            {/* ПРЕФИКС АВТОРА КОММЕНТАРИЯ */}
+                            {comment.author.role && (
+                              <RoleBadge role={comment.author.role} />
+                            )}
+
+                            <span className="text-[8px] text-muted-foreground font-mono">
                               {format(new Date(comment.createdAt), 'HH:mm dd.MM.yy')}
                             </span>
                           </div>
-                          <p className="text-xs text-primary/80 font-mono">{comment.content}</p>
+                          <p className="text-xs text-primary/80 font-mono leading-relaxed">{comment.content}</p>
                         </div>
                       ))
                     )}
@@ -304,20 +261,18 @@ export default function Profile() {
           </div>
           
           <div className="w-full md:w-64 space-y-4">
-            <div className="grid grid-cols-1 gap-4">
-              <Card className="p-4 border-primary/10 bg-card/10">
-                <p className="text-[10px] text-muted-foreground uppercase">{leet("INIT_DATE")}</p>
-                <p className="font-mono text-primary">{profile.createdAt ? format(new Date(profile.createdAt), 'dd.MM.yyyy') : "??.??"}</p>
-              </Card>
-              <Card className="p-4 border-primary/10 bg-card/10">
-                <p className="text-[10px] text-muted-foreground uppercase">{leet("VISUAL_SCAN")}</p>
-                <p className="font-mono text-primary">{profile.views || 0}</p>
-              </Card>
-            </div>
+            <Card className="p-4 border-primary/10 bg-card/10">
+              <p className="text-[10px] text-muted-foreground uppercase">{leet("INIT_DATE")}</p>
+              <p className="font-mono text-primary">{profile.createdAt ? format(new Date(profile.createdAt), 'dd.MM.yyyy') : "??.??"}</p>
+            </Card>
+            <Card className="p-4 border-primary/10 bg-card/10">
+              <p className="text-[10px] text-muted-foreground uppercase">{leet("VISUAL_SCAN")}</p>
+              <p className="font-mono text-primary">{profile.views || 0}</p>
+            </Card>
             {profile.isBanned && (
-              <Card className="p-6 border-destructive bg-destructive/10 text-center">
-                <Shield className="w-12 h-12 text-destructive mx-auto mb-4" />
-                <h3 className="text-destructive font-black text-xl uppercase">{leet("BANNED")}</h3>
+              <Card className="p-4 border-destructive bg-destructive/10 text-center">
+                <Shield className="w-10 h-10 text-destructive mx-auto mb-2" />
+                <h3 className="text-destructive font-black text-xs uppercase">{leet("BANNED")}</h3>
               </Card>
             )}
           </div>
