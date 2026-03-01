@@ -93,20 +93,32 @@ async getNotifications(userId: number) {
     return user;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
+async getUserByUsername(username: string): Promise<User | undefined> {
+  const [user] = await db.select().from(users).where(eq(users.username, username));
+  if (user) {
+    // Если в одной колонке пусто, берем из другой
+    user.passwordHash = user.passwordHash || user.passwordHashOld || "";
   }
+  return user;
+}
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
   }
 
-  async createUser(insertUser: typeof users.$inferInsert): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
+  async updateUser(id: number, updates: any): Promise<User> {
+  const finalUpdates = { ...updates };
+  
+  // Дублируем аватарку в оба поля
+  if (updates.avatarUrl) {
+    finalUpdates.avatarUrl = updates.avatarUrl;
+    finalUpdates.avatarUrlOld = updates.avatarUrl;
   }
+  
+  const [user] = await db.update(users).set(finalUpdates).where(eq(users.id, id)).returning();
+  return user;
+}
 
   async updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User> {
     const [user] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
