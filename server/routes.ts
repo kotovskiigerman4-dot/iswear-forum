@@ -39,13 +39,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
-  // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ ---
+ // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ (Синхронизировано с profile.tsx) ---
+
+  // 1. Получение данных профиля (Просмотры + Счётчики)
   app.get("/api/profile/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
 
-      // ПРОСМОТРЫ: Увеличиваем счетчик просмотров профиля
+      // Увеличиваем просмотры (Visual Scan в профиле)
       await storage.incrementViewCount(id).catch(() => {});
 
       const user = await storage.getUser(id);
@@ -61,6 +63,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error" });
     }
   });
+
+  // 2. Получение тем пользователя (Для секции TRANSMISSIONS_HISTORY)
+  app.get("/api/users/:id/threads", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const threads = await storage.getUserThreads(id);
+      res.json(threads || []); // Возвращаем пустой массив, если тем нет
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching user threads" });
+    }
+  });
+
+  // 3. Обновление профиля (ФИКС ОШИБКИ JSON)
+  app.patch("/api/users/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const targetId = parseInt(req.params.id);
+    if (req.user.id !== targetId && !isStaff(req)) return res.sendStatus(403);
+
+    try {
+      // Твой фронтенд шлет { data: { bio, avatarUrl, bannerUrl, icq } }
+      // Извлекаем именно 'data' из тела запроса
+      const updates = req.body.data || req.body;
+      
+      const updated = await storage.updateUser(targetId, updates);
+      res.json(updated); // Возвращаем JSON объект юзера
+    } catch (e) {
+      res.status(500).json({ message: "Update failed" });
+    }
+  });
+
+  // 4. ЗАГЛУШКА ДЛЯ ЗАГРУЗКИ (Чтобы не было ошибки '<' при клике на облако)
+  app.post("/api/upload", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // Пока у нас нет облачного хранилища, возвращаем ошибку в JSON формате
+    res.status(400).json({ message: "SYSTEM_ERROR: Use direct links for now." });
+  });;
 
   // ПОСЛЕДНИЕ ТРЕДЫ: Роут для отображения тем пользователя в его профиле
   app.get("/api/users/:id/threads", async (req, res) => {
