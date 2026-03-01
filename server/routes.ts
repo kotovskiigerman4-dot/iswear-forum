@@ -7,8 +7,10 @@ const isStaff = (req: any) => req.isAuthenticated() && (req.user.role === "ADMIN
 const isAdmin = (req: any) => req.isAuthenticated() && req.user.role === "ADMIN";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Инициализация категорий при запуске
   storage.seedCategories().catch(console.error);
 
+  // Middleware для обновления времени последнего визита
   app.use((req, _res, next) => {
     if (req.isAuthenticated() && req.user) {
       storage.updateLastSeen(req.user.id).catch(() => {});
@@ -23,7 +25,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const uniqueUsernames = [...new Set(mentions.map(m => m.substring(1)))];
       for (const username of uniqueUsernames) {
         const mentionedUser = await storage.getUserByUsername(username);
-        // Не уведомляем самого себя
         if (mentionedUser && mentionedUser.id !== authorId) {
           await storage.createNotification({
             userId: mentionedUser.id,
@@ -44,6 +45,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       const user = await storage.getUser(id);
       if (!user) return res.status(404).json({ message: "U53R_N07_F0UND" });
+      
       const { passwordHash, ...safeUser } = user;
       res.json({
         ...safeUser,
@@ -52,6 +54,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (e) {
       res.status(500).json({ message: "Error" });
+    }
+  });
+
+  // Обновление собственного профиля (для обычных юзеров)
+  app.patch("/api/users/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const targetId = parseInt(req.params.id);
+    if (req.user.id !== targetId && !isStaff(req)) return res.sendStatus(403);
+
+    try {
+      // Запрещаем обычным юзерам менять себе роль или статус бана через этот роут
+      const { role, status, isBanned, ...safeUpdates } = req.body;
+      const updates = isStaff(req) ? req.body : safeUpdates;
+      
+      const updated = await storage.updateUser(targetId, updates);
+      res.json(updated);
+    } catch (e) {
+      res.status(500).json({ message: "Update failed" });
     }
   });
 
@@ -81,9 +101,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileUrl: fileUrl || null
       });
 
-      // Добавлено: Уведомления для первого поста в треде
       await handleMentions(content, thread.id, post.id, req.user.id);
-
       res.status(201).json(thread);
     } catch (e) {
       res.status(400).json({ message: "Failed to create thread" });
@@ -100,7 +118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- ПОСТЫ (С уведомлениями) ---
+  // --- ПОСТЫ ---
   app.post("/api/posts", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
@@ -111,9 +129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileUrl: req.body.fileUrl || null
       });
 
-      // Добавлено: Поиск упоминаний в тексте поста
       await handleMentions(req.body.content, post.threadId, post.id, req.user.id);
-
       res.status(201).json(post);
     } catch (e) {
       res.status(400).json({ message: "Failed" });
@@ -129,17 +145,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/categories/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ message: "Invalid Category ID" });
       const category = await storage.getCategory(id);
       if (!category) return res.status(404).json({ message: "C473G0RY_N07_F0UND" });
       res.json(category);
     } catch (e) {
-      res.status(500).json({ message: "Error fetching category" });
+      res.status(500).json({ message: "Error" });
     }
   });
 
   // --- АДМИНКА ---
-// --- АДМИНКА (Управление пользователями) ---
   app.get("/api/admin/users", async (req, res) => {
     if (!isStaff(req)) return res.sendStatus(403);
     const users = await storage.listUsers();
@@ -154,12 +168,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updates = req.body;
       const currentUser = req.user;
 
-      // ЗАЩИТА: Только ADMIN может выдавать/менять роли
+      // Только ADMIN может менять роли. MODERATOR видит ошибку.
       if (updates.role && currentUser.role !== "ADMIN") {
         return res.status(403).json({ message: "0NLY_4DM1N_C4N_CH4NG3_R0L35" });
       }
 
-      // МОДЕРАТОР и АДМИН могут менять статус (APPROVED/REJECTED) и банить
       const updated = await storage.updateUser(targetId, updates);
       res.json(updated);
     } catch (e) {
@@ -167,30 +180,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- МОДЕРАЦИЯ КОНТЕНТА (Удаление) ---
-  // Удаление треда (вместе со всеми постами)
+  // Модерация: Удаление контента
   app.delete("/api/admin/threads/:id", async (req, res) => {
     if (!isStaff(req)) return res.sendStatus(403);
     try {
       await storage.deleteThread(parseInt(req.params.id));
       res.sendStatus(200);
     } catch (e) {
-      res.status(500).json({ message: "Failed to delete thread" });
+      res.status(500).json({ message: "Delete failed" });
     }
   });
 
-  // Удаление конкретного поста
   app.delete("/api/admin/posts/:id", async (req, res) => {
     if (!isStaff(req)) return res.sendStatus(403);
     try {
       await storage.deletePost(parseInt(req.params.id));
       res.sendStatus(200);
     } catch (e) {
-      res.status(500).json({ message: "Failed to delete post" });
+      res.status(500).json({ message: "Delete failed" });
     }
   });
 
-  // --- СТАТИСТИКА ---
+  // --- СТАТИСТИКА И ПРОЧЕЕ ---
   app.get("/api/stats", async (_req, res) => {
     try {
       const totalUsers = await storage.getUserCount();
@@ -202,7 +213,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- УВЕДОМЛЕНИЯ ---
   app.get("/api/notifications", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const notifs = await storage.getNotifications(req.user.id);
@@ -215,17 +225,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.sendStatus(200);
   });
 
- // --- ПОИСК ---
   app.get("/api/search", async (req, res) => {
     try {
       const query = req.query.q as string;
       if (!query) return res.json({ threads: [], users: [] });
-
       const [threads, users] = await Promise.all([
         storage.searchThreads(query),
         storage.searchUsers(query)
       ]);
-
       res.json({ threads, users });
     } catch (e) {
       res.status(500).json({ message: "Search error" });
