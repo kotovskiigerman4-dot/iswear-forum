@@ -144,8 +144,6 @@ async getUserByUsername(username: string): Promise<User | undefined> {
   async incrementViewCount(userId: number): Promise<void> {
     await db.update(users).set({ views: sql`${users.views} + 1` }).where(eq(users.id, userId));
   }
-async updateUser(id: number, updates: any): Promise<User> {
-    const finalUpdates = { ...updates };
 
     // Поддержка всех вариантов названий колонок для аватарок и баннеров
     if (updates.avatarUrl) finalUpdates.avatarUrlAlt = updates.avatarUrl;
