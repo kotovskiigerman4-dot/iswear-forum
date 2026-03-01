@@ -10,17 +10,25 @@ export const users = pgTable("users", {
   username: text("username").notNull(), 
   email: text("email").notNull(),
   icq: text("icq"),
+  // ПАРОЛЬ: Поддерживаем оба варианта названия в БД
   passwordHash: text("password_hash").notNull(),
-  // Добавлена роль USER для совместимости с логикой роутов
+  passwordHashAlt: text("passwordHash"), 
+
   role: text("role", { enum: ["ADMIN", "MODERATOR", "OLDGEN", "MEMBER", "USER"] }).default("MEMBER").notNull(),
   status: text("status", { enum: ["PENDING", "APPROVED", "REJECTED"] }).default("PENDING").notNull(),
   applicationReason: text("application_reason").notNull(), 
-  avatarUrl: text("avatarUrl"), // Было "avatar_url"
-  bannerUrl: text("bannerUrl"), // Было "banner_url"
+  
+  // АВАТАРКИ: Поддерживаем оба варианта названия в БД
+  avatarUrl: text("avatarUrl"), 
+  avatarUrlAlt: text("avatar_url"),
+  
+  // БАННЕРЫ: Поддерживаем оба варианта названия в БД
+  bannerUrl: text("bannerUrl"),
+  bannerUrlAlt: text("banner_url"),
+
   bio: text("bio"),
   isBanned: boolean("is_banned").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  // Новые поля для статистики и онлайна
   views: integer("views").default(0).notNull(),
   lastSeen: timestamp("last_seen").defaultNow().notNull(),
 });
