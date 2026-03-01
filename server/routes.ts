@@ -38,11 +38,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
-  // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ ---
+ // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ ---
   app.get("/api/profile/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      
+      // 1. Увеличиваем счетчик просмотров при каждом заходе
+      await storage.incrementViewCount(id).catch(() => {});
+
       const user = await storage.getUser(id);
       if (!user) return res.status(404).json({ message: "U53R_N07_F0UND" });
       
@@ -54,6 +58,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (e) {
       res.status(500).json({ message: "Error" });
+    }
+  });
+
+  // 2. Роут для получения тредов юзера (чтобы они появились в профиле)
+  app.get("/api/users/:id/threads", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const threads = await storage.getUserThreads(id);
+      res.json(threads);
+    } catch (e) {
+      res.status(500).json({ message: "Error fetching user threads" });
+    }
+  });
+
+  // 3. Обновление профиля (аватарки, био) - исправлено для JSON
+  app.patch("/api/users/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const targetId = parseInt(req.params.id);
+    if (req.user.id !== targetId && !isStaff(req)) return res.sendStatus(403);
+
+    try {
+      // Поддержка и прямого тела, и вложенного в .data
+      const updates = req.body.data || req.body;
+      const updated = await storage.updateUser(targetId, updates);
+      res.json(updated);
+    } catch (e) {
+      res.status(500).json({ message: "Update failed" });
     }
   });
 
