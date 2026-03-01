@@ -138,6 +138,29 @@ export class DatabaseStorage implements IStorage {
     }).where(eq(users.id, id));
   }
 
+  async getProfileComments(profileId: number): Promise<any[]> {
+  return await db
+    .select({
+      id: profile_comments.id,
+      content: profile_comments.content,
+      createdAt: profile_comments.createdAt,
+      author: {
+        id: users.id,
+        username: users.username,
+        avatarUrl: users.avatarUrl
+      }
+    })
+    .from(profile_comments)
+    .where(eq(profile_comments.profileId, profileId))
+    .leftJoin(users, eq(profile_comments.authorId, users.id))
+    .orderBy(desc(profile_comments.createdAt));
+}
+
+async createProfileComment(data: any): Promise<any> {
+  const [comment] = await db.insert(profile_comments).values(data).returning();
+  return comment;
+}
+
   // --- ТРЕДЫ И КАТЕГОРИИ ---
   private async enrichThreads(catThreads: Thread[]): Promise<any[]> {
     return await Promise.all(catThreads.map(async t => {
