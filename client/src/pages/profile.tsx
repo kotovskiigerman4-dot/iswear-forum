@@ -323,3 +323,43 @@ export default function Profile() {
     </Layout>
   );
 }
+
+{/* PROFILE WALL / COMMENTS */}
+<div className="mt-8 border border-primary/20 bg-black/40 p-6">
+  <h3 className="text-primary font-display mb-4 tracking-widest flex items-center gap-2">
+    <Terminal className="w-4 h-4" /> {leet("DATA_FEED_COMMENTS")}
+  </h3>
+
+  {/* Форма отправки (показывать только если залогинен) */}
+  {currentUser && (
+    <div className="mb-6 space-y-2">
+      <Textarea 
+        placeholder={leet("ENTER_ENCRYPTED_MESSAGE...")}
+        className="bg-black/60 border-primary/30 text-xs font-mono"
+        value={commentText}
+        onChange={(e) => setCommentText(e.target.value)}
+      />
+      <Button 
+        variant="outline" 
+        size="sm" 
+        onClick={handlePostComment}
+        className="w-full border-primary/40 hover:bg-primary/10"
+      >
+        {leet("SEND_TRANSMISSION")}
+      </Button>
+    </div>
+  )}
+
+  {/* Список комментариев */}
+  <div className="space-y-4">
+    {comments.map((comment) => (
+      <div key={comment.id} className="border-l-2 border-primary/10 pl-4 py-2">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-primary font-bold text-[10px]">{comment.author.username}</span>
+          <span className="text-[8px] text-muted-foreground">{new Date(comment.createdAt).toLocaleString()}</span>
+        </div>
+        <p className="text-xs text-primary/80 font-mono">{comment.content}</p>
+      </div>
+    ))}
+  </div>
+</div>
