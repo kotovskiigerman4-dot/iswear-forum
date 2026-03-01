@@ -331,7 +331,7 @@ export default function Profile() {
   </h3>
 
   {/* Форма отправки (показывать только если залогинен) */}
-  {currentUser && (
+  {user && (
     <div className="mb-6 space-y-2">
       <Textarea 
         placeholder={leet("ENTER_ENCRYPTED_MESSAGE...")}
