@@ -33,14 +33,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <header className="border-b border-border bg-card/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
           
-          {/* Левая часть: Логотип + Поиск + ENTITIES */}
-          <div className="flex items-center gap-6 flex-1">
-            <Link href="/">
-              <a className="flex items-center gap-3 text-primary hover:text-primary/80 transition-colors group cursor-pointer shrink-0">
-                <Terminal className="w-6 h-6 group-hover:animate-pulse" />
-                <span className="font-display font-bold text-xl tracking-widest">{leet("I-SWEA")}</span>
-              </a>
-            </Link>
+          <Link href="/">
+  <a className="flex items-center gap-3 text-primary hover:text-primary/80 transition-colors group cursor-pointer shrink-0">
+    {/* ТВОЙ НОВЫЙ ЛОГОТИП */}
+    <div className="relative w-8 h-8 flex items-center justify-center border border-primary/20 bg-black/40 rounded-sm group-hover:border-primary/50 transition-all shadow-[0_0_10px_rgba(0,255,159,0.1)]">
+      <img 
+        src="https://media.discordapp.net/attachments/1293910911240634390/1477790740582105098/favicon.png?ex=69a60b60&is=69a4b9e0&hm=5dd412db36f37b9e2fa7023f90820a09787af31955f897e492d6ee6cbe9103c2&=&format=webp&quality=lossless&width=20&height=20" 
+        alt="I-SWEA LOGO" 
+        className="w-6 h-6 object-contain group-hover:scale-110 transition-transform duration-300"
+      />
+    </div>
+    
+    <span className="font-display font-bold text-xl tracking-widest">
+      {leet("I-SWEA")}
+    </span>
+  </a>
+</Link>
 
             {/* ПОИСКОВАЯ СТРОКА */}
             <form onSubmit={handleSearch} className="relative hidden md:block w-full max-w-xs">
