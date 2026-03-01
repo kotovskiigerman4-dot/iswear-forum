@@ -139,6 +139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // --- АДМИНКА ---
+// --- АДМИНКА (Управление пользователями) ---
   app.get("/api/admin/users", async (req, res) => {
     if (!isStaff(req)) return res.sendStatus(403);
     const users = await storage.listUsers();
@@ -147,11 +148,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/admin/users/:id", async (req, res) => {
     if (!isStaff(req)) return res.sendStatus(403);
+    
     try {
-      const updated = await storage.updateUser(parseInt(req.params.id), req.body);
+      const targetId = parseInt(req.params.id);
+      const updates = req.body;
+      const currentUser = req.user;
+
+      // ЗАЩИТА: Только ADMIN может выдавать/менять роли
+      if (updates.role && currentUser.role !== "ADMIN") {
+        return res.status(403).json({ message: "0NLY_4DM1N_C4N_CH4NG3_R0L35" });
+      }
+
+      // МОДЕРАТОР и АДМИН могут менять статус (APPROVED/REJECTED) и банить
+      const updated = await storage.updateUser(targetId, updates);
       res.json(updated);
     } catch (e) {
       res.status(500).json({ message: "Update failed" });
+    }
+  });
+
+  // --- МОДЕРАЦИЯ КОНТЕНТА (Удаление) ---
+  // Удаление треда (вместе со всеми постами)
+  app.delete("/api/admin/threads/:id", async (req, res) => {
+    if (!isStaff(req)) return res.sendStatus(403);
+    try {
+      await storage.deleteThread(parseInt(req.params.id));
+      res.sendStatus(200);
+    } catch (e) {
+      res.status(500).json({ message: "Failed to delete thread" });
+    }
+  });
+
+  // Удаление конкретного поста
+  app.delete("/api/admin/posts/:id", async (req, res) => {
+    if (!isStaff(req)) return res.sendStatus(403);
+    try {
+      await storage.deletePost(parseInt(req.params.id));
+      res.sendStatus(200);
+    } catch (e) {
+      res.status(500).json({ message: "Failed to delete post" });
     }
   });
 
