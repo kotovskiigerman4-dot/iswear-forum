@@ -57,8 +57,7 @@ export class DatabaseStorage implements IStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     if (user) {
-      // Поддержка старого и нового названия колонки пароля
-      user.passwordHash = user.passwordHash || user.passwordHashAlt || "";
+      user.passwordHash = user.passwordHash || user.passwordHashOld || "";
     }
     return user;
   }
@@ -76,14 +75,14 @@ export class DatabaseStorage implements IStorage {
   async updateUser(id: number, updates: any): Promise<User> {
     const finalUpdates = { ...updates };
     
-    // Дублируем аватарку и баннер в оба варианта колонок
+    // Синхронизация аватарок и баннеров для всех вариантов колонок
     if (updates.avatarUrl) {
-      finalUpdates.avatarUrl = updates.avatarUrl;
       finalUpdates.avatarUrlAlt = updates.avatarUrl;
+      finalUpdates.avatarUrl = updates.avatarUrl;
     }
     if (updates.bannerUrl) {
-      finalUpdates.bannerUrl = updates.bannerUrl;
       finalUpdates.bannerUrlAlt = updates.bannerUrl;
+      finalUpdates.bannerUrl = updates.bannerUrl;
     }
     
     const [user] = await db.update(users).set(finalUpdates).where(eq(users.id, id)).returning();
@@ -122,6 +121,10 @@ export class DatabaseStorage implements IStorage {
 
   async incrementViewCount(userId: number): Promise<void> {
     await db.update(users).set({ views: sql`${users.views} + 1` }).where(eq(users.id, userId));
+  }
+
+  async updateUserPassword(id: number, newPasswordHash: string): Promise<void> {
+    await db.update(users).set({ passwordHash: newPasswordHash }).where(eq(users.id, id));
   }
 
   // --- ТРЕДЫ И КАТЕГОРИИ ---
@@ -170,5 +173,98 @@ export class DatabaseStorage implements IStorage {
     return { ...cat, threads: enrichedThreads };
   }
 
+  async getUserThreads(userId: number): Promise<Thread[]> {
+    return await db.select()
+      .from(threads)
+      .where(eq(threads.authorId, userId))
+      .orderBy(desc(threads.createdAt));
+  }
+
   async getThread(id: number): Promise<ThreadWithPosts | undefined> {
-    const [thread] = await db.select().
+    const [thread] = await db.select().from(threads).where(eq(threads.id, id));
+    if (!thread) return undefined;
+
+    const [author] = await db.select().from(users).where(eq(users.id, thread.authorId));
+    const [category] = await db.select().from(categories).where(eq(categories.id, thread.categoryId));
+    
+    const threadPosts = await db.select()
+      .from(posts)
+      .where(eq(posts.threadId, id))
+      .orderBy(posts.createdAt);
+
+    const enrichedPosts = await Promise.all(threadPosts.map(async p => {
+      const [pAuthor] = await db.select().from(users).where(eq(users.id, p.authorId));
+      return {
+        ...p,
+        author: pAuthor ? this.toSafeUser(pAuthor) : null
+      };
+    }));
+
+    return {
+      ...thread,
+      author: author ? this.toSafeUser(author) : null,
+      category,
+      posts: enrichedPosts,
+      replyCount: Math.max(0, threadPosts.length - 1)
+    };
+  }
+
+  async createThread(insertThread: any): Promise<Thread> {
+    const [thread] = await db.insert(threads).values(insertThread).returning();
+    return thread;
+  }
+
+  async deleteThread(id: number): Promise<void> {
+    await db.delete(posts).where(eq(posts.threadId, id));
+    await db.delete(threads).where(eq(threads.id, id));
+  }
+
+  async getThreadCount(): Promise<number> {
+    const [count] = await db.select({ value: sql<number>`count(*)` }).from(threads);
+    return Number(count.value);
+  }
+
+  async searchThreads(query: string): Promise<Thread[]> {
+    return await db.select()
+      .from(threads)
+      .where(sql`${threads.title} ILIKE ${'%' + query + '%'}`)
+      .orderBy(desc(threads.createdAt))
+      .limit(50);
+  }
+
+  // --- ПОСТЫ ---
+  async createPost(insertPost: any): Promise<Post> {
+    const [post] = await db.insert(posts).values(insertPost).returning();
+    return post;
+  }
+
+  async getPost(id: number): Promise<Post | undefined> {
+    const [post] = await db.select().from(posts).where(eq(posts.id, id));
+    return post;
+  }
+
+  async deletePost(id: number): Promise<void> {
+    await db.delete(posts).where(eq(posts.id, id));
+  }
+
+  async updatePost(id: number, updates: any): Promise<Post> {
+    const [post] = await db.update(posts).set(updates).where(eq(posts.id, id)).returning();
+    return post;
+  }
+
+  async seedCategories(): Promise<void> {
+    const existing = await db.select().from(categories);
+    if (existing.length === 0) {
+      await db.insert(categories).values([
+        { name: "OSINT", description: "Open Source Intelligence", position: 1 },
+        { name: "DEVELOPING", description: "Software development and coding", position: 2 },
+        { name: "Bases", description: "Data bases and collections", position: 3 },
+        { name: "Cryptography", description: "Encryption and security", position: 4 },
+        { name: "Sales & Warranty", description: "Marketplace and guarantees", position: 5 },
+        { name: "Open Source", description: "Open source projects", position: 6 }
+      ]);
+    }
+  }
+}
+
+export const storage = new DatabaseStorage();
