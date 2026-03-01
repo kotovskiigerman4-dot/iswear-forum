@@ -61,14 +61,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // 2. Роут для получения тредов юзера (чтобы они появились в профиле)
+ // 1. Счетчик просмотров и данные профиля (уже есть, но добавь инкремент)
+  // 2. ПОЧИНКА ТРЕДОВ: Добавляем роут для получения тем юзера
   app.get("/api/users/:id/threads", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const threads = await storage.getUserThreads(id);
       res.json(threads);
     } catch (e) {
-      res.status(500).json({ message: "Error fetching user threads" });
+      res.status(500).json({ message: "Error" });
+    }
+  });
+
+  // 3. ПОЧИНКА ОШИБКИ JSON: Роут для сохранения аватарок и био
+  app.patch("/api/users/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const targetId = parseInt(req.params.id);
+    
+    // Проверка: менять может только владелец или админ
+    if (req.user.id !== targetId && !isStaff(req)) return res.sendStatus(403);
+
+    try {
+      // Распаковываем данные (фронт может слать их внутри .data)
+      const updates = req.body.data || req.body;
+      const updated = await storage.updateUser(targetId, updates);
+      res.json(updated); // Возвращаем JSON, чтобы фронт не ругался
+    } catch (e) {
+      res.status(500).json({ message: "Update failed" });
     }
   });
 
