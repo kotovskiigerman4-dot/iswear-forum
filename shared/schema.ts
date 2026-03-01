@@ -15,8 +15,8 @@ export const users = pgTable("users", {
   role: text("role", { enum: ["ADMIN", "MODERATOR", "OLDGEN", "MEMBER", "USER"] }).default("MEMBER").notNull(),
   status: text("status", { enum: ["PENDING", "APPROVED", "REJECTED"] }).default("PENDING").notNull(),
   applicationReason: text("application_reason").notNull(), 
-  avatarUrl: text("avatar_url"),
-  bannerUrl: text("banner_url"),
+  avatarUrl: text("avatarUrl"), // Было "avatar_url"
+  bannerUrl: text("bannerUrl"), // Было "banner_url"
   bio: text("bio"),
   isBanned: boolean("is_banned").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
