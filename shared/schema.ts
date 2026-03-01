@@ -33,6 +33,15 @@ export const users = pgTable("users", {
   lastSeen: timestamp("last_seen").defaultNow().notNull(),
 });
 
+// === ТАБЛИЦА КОММЕНТАРИЕВ В ПРОФИЛЕ ===
+export const profileComments = pgTable("profile_comments", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").notNull().references(() => users.id), // Кому пишем
+  authorId: integer("author_id").notNull().references(() => users.id),  // Кто пишет
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const categories = pgTable("categories", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
@@ -61,11 +70,25 @@ export const posts = pgTable("posts", {
   updatedAt: timestamp("updated_at"),
 });
 
+// === NOTIFICATIONS TABLE ===
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  fromUserId: integer("from_user_id").notNull(),
+  threadId: integer("thread_id").notNull(),
+  postId: integer("post_id").notNull(),
+  type: text("type").default("mention"),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === RELATIONS ===
 
+// ОБЪЕДИНЕННЫЕ СВЯЗИ ЮЗЕРА (БЕЗ ДУБЛИКАТОВ)
 export const usersRelations = relations(users, ({ many }) => ({
   threads: many(threads),
   posts: many(posts),
+  profileComments: many(profileComments), 
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
@@ -95,6 +118,14 @@ export const postsRelations = relations(posts, ({ one }) => ({
   }),
 }));
 
+// Связи для комментариев (чтобы подтягивать автора)
+export const profileCommentsRelations = relations(profileComments, ({ one }) => ({
+  author: one(users, {
+    fields: [profileComments.authorId],
+    references: [users.id],
+  }),
+}));
+
 // === BASE SCHEMAS ===
 
 export const insertUserSchema = createInsertSchema(users).omit({ 
@@ -111,6 +142,7 @@ export const insertUserSchema = createInsertSchema(users).omit({
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertThreadSchema = createInsertSchema(threads).omit({ id: true, createdAt: true });
 export const insertPostSchema = createInsertSchema(posts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertProfileCommentSchema = createInsertSchema(profileComments).omit({ id: true, createdAt: true });
 
 // === API CONTRACT TYPES ===
 
@@ -118,6 +150,9 @@ export type User = typeof users.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Thread = typeof threads.$inferSelect;
 export type Post = typeof posts.$inferSelect;
+export type ProfileComment = typeof profileComments.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
 
 export type SafeUser = Omit<User, "passwordHash">;
 
@@ -169,38 +204,3 @@ export type AdminUpdateUserRequest = {
   status?: "PENDING" | "APPROVED" | "REJECTED";
   isBanned?: boolean;
 };
-
-// === NOTIFICATIONS TABLE ===
-export const notifications = pgTable("notifications", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  fromUserId: integer("from_user_id").notNull(),
-  threadId: integer("thread_id").notNull(),
-  postId: integer("post_id").notNull(),
-  type: text("type").default("mention"),
-  isRead: boolean("is_read").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-// === TYPES FOR NOTIFICATIONS ===
-export type Notification = typeof notifications.$inferSelect;
-export type InsertNotification = typeof notifications.$inferInsert;
-
-// === ТАБЛИЦА КОММЕНТАРИЕВ В ПРОФИЛЕ ===
-export const profileComments = pgTable("profile_comments", {
-  id: serial("id").primaryKey(),
-  profileId: integer("profile_id").notNull().references(() => users.id), // Кому пишем
-  authorId: integer("author_id").notNull().references(() => users.id),  // Кто пишет
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-// Добавь в relations для users:
-export const usersRelations = relations(users, ({ many }) => ({
-  threads: many(threads),
-  posts: many(posts),
-  profileComments: many(profileComments), // Добавить эту строку
-}));
-
-// Экспортируй тип
-export type ProfileComment = typeof profileComments.$inferSelect;
