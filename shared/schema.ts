@@ -185,3 +185,22 @@ export const notifications = pgTable("notifications", {
 // === TYPES FOR NOTIFICATIONS ===
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+// === ТАБЛИЦА КОММЕНТАРИЕВ В ПРОФИЛЕ ===
+export const profileComments = pgTable("profile_comments", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").notNull().references(() => users.id), // Кому пишем
+  authorId: integer("author_id").notNull().references(() => users.id),  // Кто пишет
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Добавь в relations для users:
+export const usersRelations = relations(users, ({ many }) => ({
+  threads: many(threads),
+  posts: many(posts),
+  profileComments: many(profileComments), // Добавить эту строку
+}));
+
+// Экспортируй тип
+export type ProfileComment = typeof profileComments.$inferSelect;
