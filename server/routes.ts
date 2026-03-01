@@ -10,7 +10,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Инициализация категорий при запуске
   storage.seedCategories().catch(console.error);
 
-  // Middleware для обновления времени последнего визита
+  // --- ПОСЛЕДНИЙ ОНЛАЙН ---
+  // Этот Middleware обновляет время последнего визита при каждом запросе
   app.use((req, _res, next) => {
     if (req.isAuthenticated() && req.user) {
       storage.updateLastSeen(req.user.id).catch(() => {});
@@ -18,7 +19,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
 
-  // Вспомогательная функция для поиска упоминаний и создания уведомлений
+  // Вспомогательная функция для упоминаний
   async function handleMentions(content: string, threadId: number, postId: number, authorId: number) {
     const mentions = content.match(/@(\w+)/g);
     if (mentions) {
@@ -38,13 +39,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
- // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ ---
+  // --- ПОЛЬЗОВАТЕЛИ И ПРОФИЛИ ---
   app.get("/api/profile/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
-      
-      // 1. Увеличиваем счетчик просмотров при каждом заходе
+
+      // ПРОСМОТРЫ: Увеличиваем счетчик просмотров профиля
       await storage.incrementViewCount(id).catch(() => {});
 
       const user = await storage.getUser(id);
@@ -61,63 +62,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
- // 1. Счетчик просмотров и данные профиля (уже есть, но добавь инкремент)
-  // 2. ПОЧИНКА ТРЕДОВ: Добавляем роут для получения тем юзера
+  // ПОСЛЕДНИЕ ТРЕДЫ: Роут для отображения тем пользователя в его профиле
   app.get("/api/users/:id/threads", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const threads = await storage.getUserThreads(id);
       res.json(threads);
     } catch (e) {
-      res.status(500).json({ message: "Error" });
+      res.status(500).json({ message: "Error fetching user threads" });
     }
   });
 
-  // 3. ПОЧИНКА ОШИБКИ JSON: Роут для сохранения аватарок и био
+  // АВАТАРКИ И БИО: Роут для обновления собственного профиля юзером
   app.patch("/api/users/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const targetId = parseInt(req.params.id);
-    
-    // Проверка: менять может только владелец или админ
     if (req.user.id !== targetId && !isStaff(req)) return res.sendStatus(403);
 
     try {
-      // Распаковываем данные (фронт может слать их внутри .data)
+      // ФИКС ОШИБКИ JSON: Распаковываем данные (фронт шлет их в .data)
       const updates = req.body.data || req.body;
-      const updated = await storage.updateUser(targetId, updates);
-      res.json(updated); // Возвращаем JSON, чтобы фронт не ругался
-    } catch (e) {
-      res.status(500).json({ message: "Update failed" });
-    }
-  });
-
-  // 3. Обновление профиля (аватарки, био) - исправлено для JSON
-  app.patch("/api/users/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const targetId = parseInt(req.params.id);
-    if (req.user.id !== targetId && !isStaff(req)) return res.sendStatus(403);
-
-    try {
-      // Поддержка и прямого тела, и вложенного в .data
-      const updates = req.body.data || req.body;
-      const updated = await storage.updateUser(targetId, updates);
-      res.json(updated);
-    } catch (e) {
-      res.status(500).json({ message: "Update failed" });
-    }
-  });
-
-  // Обновление собственного профиля (для обычных юзеров)
-  app.patch("/api/users/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const targetId = parseInt(req.params.id);
-    if (req.user.id !== targetId && !isStaff(req)) return res.sendStatus(403);
-
-    try {
-      // Запрещаем обычным юзерам менять себе роль или статус бана через этот роут
-      const { role, status, isBanned, ...safeUpdates } = req.body;
-      const updates = isStaff(req) ? req.body : safeUpdates;
-      
       const updated = await storage.updateUser(targetId, updates);
       res.json(updated);
     } catch (e) {
@@ -150,7 +114,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         authorId: req.user.id,
         fileUrl: fileUrl || null
       });
-
       await handleMentions(content, thread.id, post.id, req.user.id);
       res.status(201).json(thread);
     } catch (e) {
@@ -178,7 +141,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         authorId: req.user.id,
         fileUrl: req.body.fileUrl || null
       });
-
       await handleMentions(req.body.content, post.threadId, post.id, req.user.id);
       res.status(201).json(post);
     } catch (e) {
@@ -212,13 +174,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/admin/users/:id", async (req, res) => {
     if (!isStaff(req)) return res.sendStatus(403);
-    
     try {
       const targetId = parseInt(req.params.id);
-      const updates = req.body;
+      // ФИКС АДМИНКИ: Поддержка данных из .data
+      const updates = req.body.data || req.body; 
       const currentUser = req.user;
 
-      // Только ADMIN может менять роли. MODERATOR видит ошибку.
       if (updates.role && currentUser.role !== "ADMIN") {
         return res.status(403).json({ message: "0NLY_4DM1N_C4N_CH4NG3_R0L35" });
       }
@@ -230,7 +191,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Модерация: Удаление контента
   app.delete("/api/admin/threads/:id", async (req, res) => {
     if (!isStaff(req)) return res.sendStatus(403);
     try {
@@ -251,15 +211,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- СТАТИСТИКА И ПРОЧЕЕ ---
+  // --- СТАТИСТИКА ---
   app.get("/api/stats", async (_req, res) => {
     try {
       const totalUsers = await storage.getUserCount();
+      const threadCount = await storage.getThreadCount();
       const allUsers = await storage.listUsers();
       const onlineUsers = allUsers.filter(u => u.lastSeen && (Date.now() - new Date(u.lastSeen).getTime() < 300000)).length;
-      res.json({ totalUsers, onlineUsers });
+      res.json({ userCount: totalUsers, threadCount, onlineUsers });
     } catch (e) {
-      res.json({ totalUsers: 0, onlineUsers: 0 });
+      res.json({ userCount: 0, threadCount: 0, onlineUsers: 0 });
     }
   });
 
