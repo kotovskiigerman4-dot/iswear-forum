@@ -4,24 +4,47 @@ import { useProfile, useUpdateProfile } from "@/hooks/use-api";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, Button, Input, Textarea, RoleBadge } from "@/components/ui/cyber-components";
 import { Layout } from "@/components/layout";
-import { useParams, Link } from "wouter"; // Добавили Link
+import { useParams, Link } from "wouter";
 import { leet } from "@/lib/leet";
 import { format } from "date-fns";
 import { User as UserIcon, Settings2, Shield, AlertCircle, Upload, Terminal, Eye, MessageSquare, Clock } from "lucide-react";
-import { useQuery } from "@tanstack/react-query"; // Добавили для загрузки тем
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"; 
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Profile() {
   const { id } = useParams();
   const userId = parseInt(id || "0");
+  const queryClient = useQueryClient();
   
   const { data: profile, isLoading, error } = useProfile(userId);
   const { user } = useAuth();
   const updateProfile = useUpdateProfile();
   
+  // Состояния для комментариев
+  const [commentText, setCommentText] = useState("");
+
   // Запрос на темы пользователя
   const { data: userThreads } = useQuery({
     queryKey: [`/api/users/${userId}/threads`],
     enabled: !!userId
+  });
+
+  // Запрос на комментарии в профиле
+  const { data: comments = [] } = useQuery({
+    queryKey: [`/api/profile/${userId}/comments`],
+    enabled: !!userId
+  });
+
+  // Мутация для отправки комментария
+  const postCommentMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const res = await apiRequest("POST", `/api/profile/${userId}/comments`, { content });
+      return res.json();
+    },
+    onSuccess: () => {
+      setCommentText("");
+      queryClient.invalidateQueries({ queryKey: [`/api/profile/${userId}/comments`] });
+    }
   });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -46,7 +69,6 @@ export default function Profile() {
     }
   }, [profile]);
 
-  // Функция для рендера статуса Online
   const renderStatus = (lastSeenValue: string | Date | null) => {
     if (!lastSeenValue) return <span className="text-muted-foreground italic">SIGNAL_LOST</span>;
     const lastSeen = new Date(lastSeenValue);
@@ -98,6 +120,11 @@ export default function Profile() {
     );
   };
 
+  const handlePostComment = () => {
+    if (!commentText.trim()) return;
+    postCommentMutation.mutate(commentText);
+  };
+
   if (isLoading) return <Layout><div className="animate-pulse h-64 bg-card" /></Layout>;
   
   if (error || !profile) {
@@ -121,7 +148,7 @@ export default function Profile() {
 
   return (
     <Layout>
-      <div className="space-y-0">
+      <div className="space-y-0 pb-20">
         <div className="relative">
           <div className="h-48 md:h-64 w-full bg-secondary border-b border-border relative overflow-hidden">
             {bannerUrl ? (
@@ -176,56 +203,35 @@ export default function Profile() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-8 pt-10 pb-20 flex flex-col md:flex-row gap-8">
+        <div className="max-w-7xl mx-auto px-8 pt-10 flex flex-col md:flex-row gap-8">
           <div className="flex-1 space-y-6">
             {isEditing ? (
               <Card className="p-6 border-primary/30 bg-card/40 backdrop-blur-sm">
                 <h3 className="text-primary font-display mb-4 flex items-center gap-2">
                   <Terminal className="w-4 h-4" /> {leet("EDIT_MODE_ACTIVE")}
                 </h3>
-                {updateError && (
-                  <div className="mb-4 p-3 border border-destructive bg-destructive/10 text-destructive text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" /> {updateError}
-                  </div>
-                )}
-                
                 <form onSubmit={handleUpdate} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">{leet("AVATAR_LINK")}</label>
-                      <div className="flex gap-2">
-                        <Input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="https://..." className="bg-black/20" />
-                        <input type="file" ref={avatarInputRef} className="hidden" accept=".png,.jpg,.jpeg" onChange={(e) => handleFileUpload(e, 'avatar')} />
-                        <Button type="button" size="icon" variant="outline" onClick={() => avatarInputRef.current?.click()} disabled={isUploading}>
-                          <Upload className="w-4 h-4" />
-                        </Button>
-                      </div>
+                      <Input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="https://..." className="bg-black/20" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">{leet("BANNER_LINK")}</label>
-                      <div className="flex gap-2">
-                        <Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} placeholder="https://..." className="bg-black/20" />
-                        <input type="file" ref={bannerInputRef} className="hidden" accept=".png,.jpg,.jpeg" onChange={(e) => handleFileUpload(e, 'banner')} />
-                        <Button type="button" size="icon" variant="outline" onClick={() => bannerInputRef.current?.click()} disabled={isUploading}>
-                          <Upload className="w-4 h-4" />
-                        </Button>
-                      </div>
+                      <Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} placeholder="https://..." className="bg-black/20" />
                     </div>
                   </div>
-
                   <div className="space-y-2">
                     <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">NETWORK_ID (ICQ)</label>
                     <Input value={icq} onChange={e => setIcq(e.target.value)} placeholder="UIN..." className="bg-black/20" />
                   </div>
-
                   <div className="space-y-2">
                     <label className="text-[10px] text-primary/70 uppercase font-bold tracking-widest">{leet("BIO_DATA")}</label>
                     <Textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} className="bg-black/20 font-mono text-sm" />
                   </div>
-
                   <div className="flex gap-3">
-                    <Button type="submit" className="flex-1 bg-primary/20 hover:bg-primary/40 border-primary" disabled={updateProfile.isPending || isUploading}>
-                      {updateProfile.isPending ? leet("UPLOADING...") : leet("SAVE_CHANGES")}
+                    <Button type="submit" className="flex-1" disabled={updateProfile.isPending}>
+                      {leet("SAVE_CHANGES")}
                     </Button>
                     <Button type="button" variant="ghost" onClick={() => setIsEditing(false)}>
                       {leet("CANCEL")}
@@ -237,61 +243,58 @@ export default function Profile() {
               <div className="space-y-6">
                 <Card className="p-6 bg-card/20 border-primary/10 relative group overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
-                  <Terminal className="absolute top-4 right-4 w-4 h-4 text-primary/20 group-hover:text-primary/50 transition-colors" />
                   <h3 className="text-primary text-[10px] uppercase mb-4 tracking-[0.3em] font-bold border-b border-primary/20 pb-2">
                     {leet("USER_INTEL")}
                   </h3>
-                  <div className="whitespace-pre-wrap text-foreground/90 font-mono text-sm leading-relaxed min-h-[100px]">
-                    {profile.bio || <span className="text-muted-foreground/30 italic">{leet("NO_ENCRYPTED_DATA_FOUND")}</span>}
+                  <div className="whitespace-pre-wrap text-foreground/90 font-mono text-sm min-h-[100px]">
+                    {profile.bio || leet("NO_ENCRYPTED_DATA_FOUND")}
                   </div>
                 </Card>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <Card className="p-4 border-primary/10 bg-card/10 flex flex-col justify-center">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Clock className="w-3 h-3 text-muted-foreground" />
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{leet("INIT_DATE")}</p>
-                    </div>
-                    <p className="font-mono text-primary text-lg">
-                      {profile.createdAt ? format(new Date(profile.createdAt), 'dd.MM.yyyy') : "??.??"}
-                    </p>
-                  </Card>
-                  <Card className="p-4 border-primary/10 bg-card/10 flex flex-col justify-center">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Eye className="w-3 h-3 text-muted-foreground" />
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{leet("VISUAL_SCAN")}</p>
-                    </div>
-                    <p className="font-mono text-primary text-lg">{profile.views || 0}</p>
-                  </Card>
-                  <Card className="p-4 border-primary/10 bg-card/10 flex flex-col justify-center">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Terminal className="w-3 h-3 text-muted-foreground" />
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Network ID</p>
-                    </div>
-                    <p className="font-mono text-primary text-lg">{profile.icq ? `UIN:${profile.icq}` : "NO_SIGNAL"}</p>
-                  </Card>
-                </div>
 
-                {/* --- СЕКЦИЯ ТЕМ ПОЛЬЗОВАТЕЛЯ --- */}
-                <div className="space-y-4">
-                  <h3 className="text-primary font-display uppercase tracking-widest text-sm flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4" /> {leet("TRANSMISSIONS_HISTORY")}
+                {/* PROFILE WALL / COMMENTS */}
+                <div className="mt-8 border border-primary/20 bg-black/40 p-6">
+                  <h3 className="text-primary font-display mb-4 tracking-widest flex items-center gap-2 text-sm uppercase">
+                    <Terminal className="w-4 h-4" /> {leet("DATA_FEED_COMMENTS")}
                   </h3>
-                  <div className="grid gap-2">
-                    {userThreads?.length === 0 ? (
-                      <p className="text-muted-foreground font-mono text-xs italic p-4 border border-dashed border-primary/10">NO_DATA_LOGGED</p>
+
+                  {user && (
+                    <div className="mb-6 space-y-2">
+                      <Textarea 
+                        placeholder={leet("ENTER_ENCRYPTED_MESSAGE...")}
+                        className="bg-black/60 border-primary/30 text-xs font-mono"
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                      />
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={handlePostComment}
+                        className="w-full border-primary/40 hover:bg-primary/10"
+                        disabled={postCommentMutation.isPending}
+                      >
+                        {postCommentMutation.isPending ? leet("SENDING...") : leet("SEND_TRANSMISSION")}
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                    {comments.length === 0 ? (
+                      <p className="text-[10px] text-muted-foreground italic">{leet("NO_FEED_DATA_AVAILABLE")}</p>
                     ) : (
-                      userThreads?.map((thread: any) => (
-                        <Link key={thread.id} href={`/thread/${thread.id}`}>
-                          <div className="p-4 border border-primary/5 bg-primary/5 hover:bg-primary/10 hover:border-primary/20 cursor-pointer transition-all group flex justify-between items-center">
-                            <span className="text-sm font-mono group-hover:text-primary transition-colors truncate mr-4">
-                              {thread.title}
-                            </span>
-                            <span className="text-[10px] opacity-40 font-mono shrink-0">
-                              {format(new Date(thread.createdAt), 'dd.MM.yy')}
+                      comments.map((comment) => (
+                        <div key={comment.id} className="border-l-2 border-primary/10 pl-4 py-2 bg-white/5">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Link href={`/user/${comment.author.id}`}>
+                              <span className="text-primary font-bold text-[10px] cursor-pointer hover:underline">
+                                {comment.author.username}
+                              </span>
+                            </Link>
+                            <span className="text-[8px] text-muted-foreground">
+                              {format(new Date(comment.createdAt), 'HH:mm dd.MM.yy')}
                             </span>
                           </div>
-                        </Link>
+                          <p className="text-xs text-primary/80 font-mono">{comment.content}</p>
+                        </div>
                       ))
                     )}
                   </div>
@@ -301,20 +304,20 @@ export default function Profile() {
           </div>
           
           <div className="w-full md:w-64 space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <Card className="p-4 border-primary/10 bg-card/10">
+                <p className="text-[10px] text-muted-foreground uppercase">{leet("INIT_DATE")}</p>
+                <p className="font-mono text-primary">{profile.createdAt ? format(new Date(profile.createdAt), 'dd.MM.yyyy') : "??.??"}</p>
+              </Card>
+              <Card className="p-4 border-primary/10 bg-card/10">
+                <p className="text-[10px] text-muted-foreground uppercase">{leet("VISUAL_SCAN")}</p>
+                <p className="font-mono text-primary">{profile.views || 0}</p>
+              </Card>
+            </div>
             {profile.isBanned && (
-              <Card className="p-6 border-destructive bg-destructive/10 text-center shadow-[0_0_20px_rgba(255,0,0,0.2)]">
+              <Card className="p-6 border-destructive bg-destructive/10 text-center">
                 <Shield className="w-12 h-12 text-destructive mx-auto mb-4" />
                 <h3 className="text-destructive font-black text-xl uppercase">{leet("BANNED")}</h3>
-                <p className="text-[8px] text-destructive/60 mt-2 font-mono uppercase leading-tight">
-                  Credentials nullified by system protocol.
-                </p>
-              </Card>
-            )}
-            {profile.role === "ADMIN" && (
-              <Card className="p-6 border-accent/50 bg-accent/5 text-center">
-                <Shield className="w-12 h-12 text-accent mx-auto mb-4 animate-pulse" />
-                <h3 className="text-accent font-black text-xl uppercase">OVERSEER</h3>
-                <p className="text-[8px] text-accent/60 mt-2 font-mono uppercase">Master access granted.</p>
               </Card>
             )}
           </div>
@@ -323,43 +326,3 @@ export default function Profile() {
     </Layout>
   );
 }
-
-{/* PROFILE WALL / COMMENTS */}
-<div className="mt-8 border border-primary/20 bg-black/40 p-6">
-  <h3 className="text-primary font-display mb-4 tracking-widest flex items-center gap-2">
-    <Terminal className="w-4 h-4" /> {leet("DATA_FEED_COMMENTS")}
-  </h3>
-
-  {/* Форма отправки (показывать только если залогинен) */}
-  {user && (
-    <div className="mb-6 space-y-2">
-      <Textarea 
-        placeholder={leet("ENTER_ENCRYPTED_MESSAGE...")}
-        className="bg-black/60 border-primary/30 text-xs font-mono"
-        value={commentText}
-        onChange={(e) => setCommentText(e.target.value)}
-      />
-      <Button 
-        variant="outline" 
-        size="sm" 
-        onClick={handlePostComment}
-        className="w-full border-primary/40 hover:bg-primary/10"
-      >
-        {leet("SEND_TRANSMISSION")}
-      </Button>
-    </div>
-  )}
-
-  {/* Список комментариев */}
-  <div className="space-y-4">
-    {comments.map((comment) => (
-      <div key={comment.id} className="border-l-2 border-primary/10 pl-4 py-2">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-primary font-bold text-[10px]">{comment.author.username}</span>
-          <span className="text-[8px] text-muted-foreground">{new Date(comment.createdAt).toLocaleString()}</span>
-        </div>
-        <p className="text-xs text-primary/80 font-mono">{comment.content}</p>
-      </div>
-    ))}
-  </div>
-</div>
