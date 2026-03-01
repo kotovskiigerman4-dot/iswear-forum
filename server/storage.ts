@@ -119,13 +119,7 @@ async getUserByUsername(username: string): Promise<User | undefined> {
   const [user] = await db.update(users).set(finalUpdates).where(eq(users.id, id)).returning();
   return user;
 }
-
-  async updateUser(id: number, updates: Partial<typeof users.$inferInsert>): Promise<User> {
-    const [user] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
-    if (!user) throw new Error(`User ${id} not found`);
-    return user;
-  }
-
+  
   async listUsers(): Promise<SafeUser[]> {
     const allUsers = await db.select().from(users);
     return allUsers.map(u => this.toSafeUser(u));
@@ -150,9 +144,22 @@ async getUserByUsername(username: string): Promise<User | undefined> {
   async incrementViewCount(userId: number): Promise<void> {
     await db.update(users).set({ views: sql`${users.views} + 1` }).where(eq(users.id, userId));
   }
+async updateUser(id: number, updates: any): Promise<User> {
+    const finalUpdates = { ...updates };
 
-  async updateUserPassword(id: number, newPasswordHash: string): Promise<void> {
-    await db.update(users).set({ passwordHash: newPasswordHash }).where(eq(users.id, id));
+    // Поддержка всех вариантов названий колонок для аватарок и баннеров
+    if (updates.avatarUrl) finalUpdates.avatarUrlAlt = updates.avatarUrl;
+    if (updates.avatar_url) finalUpdates.avatarUrl = updates.avatar_url;
+    if (updates.bannerUrl) finalUpdates.bannerUrlAlt = updates.bannerUrl;
+
+    const [user] = await db
+      .update(users)
+      .set(finalUpdates)
+      .where(eq(users.id, id))
+      .returning();
+
+    if (!user) throw new Error(`User ${id} not found`);
+    return user;
   }
 
   // --- ТРЕДЫ И КАТЕГОРИИ ---
