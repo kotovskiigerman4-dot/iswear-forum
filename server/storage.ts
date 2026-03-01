@@ -131,7 +131,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ИСПРАВЛЕННЫЕ МЕТОДЫ (УБРАЛИ _)
-  async getProfileComments(profileId: number): Promise<any[]> {
+ async getProfileComments(profileId: number): Promise<any[]> {
     return await db
       .select({
         id: profileComments.id,
@@ -140,7 +140,8 @@ export class DatabaseStorage implements IStorage {
         author: {
           id: users.id,
           username: users.username,
-          avatarUrl: users.avatarUrl
+          avatarUrl: users.avatarUrl,
+          role: users.role // ДОБАВИЛИ ЭТУ СТРОКУ
         }
       })
       .from(profileComments)
