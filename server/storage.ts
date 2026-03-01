@@ -28,7 +28,7 @@ export class DatabaseStorage implements IStorage {
     const { passwordHash, ...safe } = user;
     return {
       ...safe,
-      avatarUrl: safe.avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${safe.username}`
+      avatarUrl: safe.avatarUrl || safe.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${safe.username}`
     };
   }
 
@@ -57,7 +57,8 @@ export class DatabaseStorage implements IStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     if (user) {
-      user.passwordHash = user.passwordHash || user.passwordHashOld || "";
+      // Совместимость хешей для логина
+      user.passwordHash = user.passwordHash || user.password_hash || user.passwordHashOld || "";
     }
     return user;
   }
@@ -72,17 +73,23 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  // ОБНОВЛЕННЫЙ МЕТОД ДЛЯ АДМИНКИ И ПРОФИЛЯ
   async updateUser(id: number, updates: any): Promise<User> {
     const finalUpdates = { ...updates };
     
-    // Синхронизация аватарок и баннеров для всех вариантов колонок
+    // 1. Синхронизация аватарок/баннеров (для всех имен колонок в БД)
     if (updates.avatarUrl) {
       finalUpdates.avatarUrlAlt = updates.avatarUrl;
-      finalUpdates.avatarUrl = updates.avatarUrl;
+      finalUpdates.avatar_url = updates.avatarUrl; 
     }
     if (updates.bannerUrl) {
       finalUpdates.bannerUrlAlt = updates.bannerUrl;
-      finalUpdates.bannerUrl = updates.bannerUrl;
+      finalUpdates.banner_url = updates.bannerUrl;
+    }
+
+    // 2. Обработка бана (чтобы не было конфликтов с булевыми значениями)
+    if (updates.isBanned !== undefined) {
+      finalUpdates.isBanned = !!updates.isBanned;
     }
     
     const [user] = await db.update(users).set(finalUpdates).where(eq(users.id, id)).returning();
@@ -124,7 +131,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserPassword(id: number, newPasswordHash: string): Promise<void> {
-    await db.update(users).set({ passwordHash: newPasswordHash }).where(eq(users.id, id));
+    // Обновляем пароль сразу во всех возможных колонках
+    await db.update(users).set({ 
+      passwordHash: newPasswordHash,
+      password_hash: newPasswordHash 
+    }).where(eq(users.id, id));
   }
 
   // --- ТРЕДЫ И КАТЕГОРИИ ---
