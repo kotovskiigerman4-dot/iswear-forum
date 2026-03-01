@@ -288,6 +288,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Получить комментарии профиля
+  app.get("/api/profile/:id/comments", async (req, res) => {
+    const comments = await storage.getProfileComments(parseInt(req.params.id));
+    res.json(comments);
+  });
+
+  // Написать комментарий
+  app.post("/api/profile/:id/comments", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const comment = await storage.createProfileComment({
+      profileId: parseInt(req.params.id),
+      authorId: req.user.id,
+      content: req.body.content
+    });
+    res.json(comment);
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
