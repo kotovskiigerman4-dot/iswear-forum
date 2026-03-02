@@ -51,7 +51,7 @@ export default function CategoryView() {
         {isOpenSource && (
           <div className="bg-destructive/10 border border-destructive p-4 flex items-center gap-3 text-destructive animate-pulse">
             <AlertCircle className="w-5 h-5" />
-            <span className="font-display font-bold">зачем ты сюда полез</span>
+            <span className="font-display font-bold">Obey our rules! Open source does not mean GORE/CP and another bullshit.</span>
           </div>
         )}
 
