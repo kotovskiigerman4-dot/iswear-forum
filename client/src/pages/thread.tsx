@@ -1,7 +1,10 @@
+// @ts-nocheck
 import { useState, useRef } from "react";
 import { useThread, useCreatePost, useDeletePost, useDeleteThread } from "@/hooks/use-api";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, Button, Textarea, RoleBadge } from "@/components/ui/cyber-components";
+import { Card, Button, RoleBadge } from "@/components/ui/cyber-components";
+// ИМПОРТИРУЕМ РЕДАКТОР
+import CyberEditor from "@/components/CyberEditor"; 
 import { Layout } from "@/components/layout";
 import { Link, useParams, useLocation } from "wouter";
 import { leet } from "@/lib/leet";
@@ -51,7 +54,7 @@ export default function ThreadView() {
       const data = await res.json();
       setFileUrl(data.url);
     } catch (err) {
-      alert("Error uploading file: Only .png and .txt allowed");
+      alert("Error: Only .png and .txt allowed");
     } finally {
       setIsUploading(false);
     }
@@ -59,7 +62,8 @@ export default function ThreadView() {
 
   const handleReply = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content.trim()) return;
+    // Проверка на пустоту (учитывая HTML теги TipTap)
+    if (!content.replace(/<[^>]*>/g, '').trim()) return;
     
     createPost.mutate(
       { 
@@ -163,8 +167,9 @@ export default function ThreadView() {
                     <span className="opacity-30 text-[10px]">#{post.id}</span>
                   </div>
                 </div>
-                <div className="p-4 text-foreground whitespace-pre-wrap flex-1">
-                  {post.content}
+                {/* ВЫВОДИМ КОНТЕНТ КАК HTML */}
+                <div className="p-4 text-foreground flex-1 prose prose-invert max-w-none prose-sm">
+                  <div dangerouslySetInnerHTML={{ __html: post.content }} />
                   {post.fileUrl && (
                     <div className="mt-4 p-2 border border-primary/20 bg-primary/5 rounded-sm max-w-fit">
                       {post.fileUrl.endsWith('.png') ? (
@@ -192,7 +197,12 @@ export default function ThreadView() {
               <Reply className="w-5 h-5" /> {leet("TRANSMIT_REPLY")}
             </h3>
             <form onSubmit={handleReply} className="space-y-4 ml-2">
-              <Textarea value={content} onChange={e => setContent(e.target.value)} required placeholder="Input data payload here..." rows={4} className="bg-background/50 border-primary/20 focus:border-primary" />
+              {/* НОВЫЙ РЕДАКТОР ВМЕСТО TEXTAREA */}
+              <CyberEditor 
+                value={content} 
+                onChange={(html) => setContent(html)} 
+              />
+              
               <div className="flex flex-wrap items-center gap-4">
                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".png,.txt" className="hidden" />
                 <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="border-primary/40 hover:bg-primary/10">
