@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
-import { useProfile, useUpdateProfile } from "@/hooks/use-api";
+import { useProfile } from "@/hooks/use-api";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, Button, Input, Textarea, RoleBadge } from "@/components/ui/cyber-components";
 import { Layout } from "@/components/layout";
@@ -18,7 +18,6 @@ export default function Profile() {
   
   const { data: profile, isLoading, error } = useProfile(userId);
   const { user: currentUser } = useAuth();
-  const updateProfile = useUpdateProfile();
   
   const [activeTab, setActiveTab] = useState("wall"); 
   const [commentText, setCommentText] = useState("");
@@ -50,28 +49,30 @@ export default function Profile() {
     }
   }, [profile]);
 
-  const handleUpdate = async (e: React.FormEvent) => {
+  // --- ФУНКЦИИ ОБНОВЛЕНИЯ ---
+  const updateProfile = useMutation({
+    mutationFn: async (data: any) => {
+      // Отправляем данные на правильный эндпоинт /api/users/:id
+      const res = await apiRequest("PATCH", `/api/users/${userId}`, { data });
+      if (!res.ok) throw new Error("Update failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/profile/${userId}`] });
+      setIsEditing(false);
+    }
+  });
+
+  const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
-    // ВАЖНО: Твой routes.ts (строка 80) ждет req.body.data
-    updateProfile.mutate(
-      { 
-        id: userId, 
-        data: { 
-          bio, 
-          avatarUrl, 
-          avatar_url: avatarUrl,
-          bannerUrl, 
-          banner_url: bannerUrl,
-          icq 
-        } 
-      },
-      { 
-        onSuccess: () => {
-          setIsEditing(false);
-          queryClient.invalidateQueries([`/api/profile/${userId}`]);
-        } 
-      }
-    );
+    updateProfile.mutate({ 
+      bio, 
+      avatarUrl, 
+      avatar_url: avatarUrl,
+      bannerUrl, 
+      banner_url: bannerUrl,
+      icq 
+    });
   };
 
   const postCommentMutation = useMutation({
@@ -84,6 +85,27 @@ export default function Profile() {
       queryClient.invalidateQueries({ queryKey: [`/api/profile/${userId}/comments`] });
     }
   });
+
+  // --- РЕНДЕР СТАТУСА ОНЛАЙН ---
+  const renderStatus = (lastSeenValue: string | Date | null) => {
+    if (!lastSeenValue) return <span className="text-muted-foreground italic tracking-widest text-[10px]">SIGNAL_LOST</span>;
+    const lastSeen = new Date(lastSeenValue);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - lastSeen.getTime()) / 1000 / 60);
+
+    if (diffInMinutes < 5) {
+      return (
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+          </span>
+          <span className="text-primary font-bold tracking-widest text-[10px] animate-pulse">{leet("ONLINE")}</span>
+        </div>
+      );
+    }
+    return <span className="text-muted-foreground text-[10px]">{diffInMinutes < 60 ? `${diffInMinutes}M AGO` : format(lastSeen, 'HH:mm dd.MM')}</span>;
+  };
 
   if (isLoading) return <Layout><div className="animate-pulse h-64 bg-card" /></Layout>;
   if (error || !profile) return (
@@ -125,6 +147,9 @@ export default function Profile() {
               <h1 className="text-4xl md:text-5xl text-primary font-display tracking-tighter">{profile?.username}</h1>
               <div className="mt-2 flex items-center gap-4">
                 <RoleBadge role={profile?.role} />
+                <div className="border-l border-primary/20 pl-4 py-1">
+                  {renderStatus(profile?.lastSeen)}
+                </div>
               </div>
             </div>
           </div>
@@ -136,13 +161,15 @@ export default function Profile() {
               <Card className="p-6 border-primary/30 bg-card/40">
                 <form onSubmit={handleUpdate} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="Avatar URL" className="bg-black/40" />
-                    <Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} placeholder="Banner URL" className="bg-black/40" />
+                    <Input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="Avatar URL" className="bg-black/40 border-primary/20" />
+                    <Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} placeholder="Banner URL" className="bg-black/40 border-primary/20" />
                   </div>
-                  <Input value={icq} onChange={e => setIcq(e.target.value)} placeholder="ICQ / UIN" className="bg-black/40" />
-                  <Textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} className="bg-black/40 font-mono" />
+                  <Input value={icq} onChange={e => setIcq(e.target.value)} placeholder="ICQ / UIN" className="bg-black/40 border-primary/20" />
+                  <Textarea value={bio} onChange={e => setBio(e.target.value)} rows={4} className="bg-black/40 font-mono border-primary/20" />
                   <div className="flex gap-3">
-                    <Button type="submit" className="flex-1">{leet("SAVE_CHANGES")}</Button>
+                    <Button type="submit" className="flex-1" disabled={updateProfile.isPending}>
+                      {updateProfile.isPending ? "SYNCING..." : leet("SAVE_CHANGES")}
+                    </Button>
                     <Button type="button" variant="ghost" onClick={() => setIsEditing(false)}>{leet("CANCEL")}</Button>
                   </div>
                 </form>
@@ -163,6 +190,7 @@ export default function Profile() {
                     <Card className="p-6 bg-card/20 border-primary/10">
                       <h3 className="text-primary text-[10px] uppercase mb-4 tracking-widest font-bold border-b border-primary/20 pb-2">{leet("USER_INTEL")}</h3>
                       <div className="whitespace-pre-wrap text-foreground/90 font-mono text-sm">{profile?.bio || leet("NO_DATA")}</div>
+                      {profile?.icq && <div className="mt-4 text-[10px] font-mono text-primary/50 uppercase">Network_ID: {profile.icq}</div>}
                     </Card>
 
                     <div className="border border-primary/20 bg-black/40 p-6">
@@ -179,6 +207,7 @@ export default function Profile() {
                             <div className="flex items-center gap-2 mb-1">
                               <Link href={`/user/${c.author?.id}`}><span className="text-primary font-bold text-[10px] cursor-pointer">{c.author?.username}</span></Link>
                               {c.author?.role && <RoleBadge role={c.author.role} />}
+                              <span className="text-[8px] text-muted-foreground ml-auto">{c.createdAt ? format(new Date(c.createdAt), 'HH:mm dd.MM') : '--:--'}</span>
                             </div>
                             <p className="text-xs font-mono text-primary/80">{c.content}</p>
                           </div>
@@ -192,6 +221,7 @@ export default function Profile() {
                       <Link key={t.id} href={`/thread/${t.id}`}>
                         <Card className="p-4 bg-primary/5 border-primary/10 hover:border-primary/40 cursor-pointer transition-all">
                           <h4 className="text-primary font-bold text-sm truncate">{t.title}</h4>
+                          <p className="text-[8px] text-muted-foreground mt-1 uppercase font-mono">{t.createdAt ? format(new Date(t.createdAt), 'dd.MM.yyyy') : '??.??.????'}</p>
                         </Card>
                       </Link>
                     ))}
@@ -205,6 +235,10 @@ export default function Profile() {
             <Card className="p-4 border-primary/10 bg-card/10 text-center">
               <p className="text-[10px] text-muted-foreground uppercase">{leet("VISUAL_SCAN")}</p>
               <p className="font-mono text-primary text-xl">{profile?.views || 0}</p>
+            </Card>
+            <Card className="p-4 border-primary/10 bg-card/10 text-center">
+              <p className="text-[10px] text-muted-foreground uppercase">{leet("INIT_DATE")}</p>
+              <p className="font-mono text-primary text-sm">{profile?.createdAt ? format(new Date(profile.createdAt), 'dd.MM.yyyy') : "??.??"}</p>
             </Card>
           </div>
         </div>
