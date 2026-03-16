@@ -53,19 +53,30 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  passport.use(
-    new LocalStrategy(async (username, password, done) => {
-      try {
-        const user = await storage.getUserByUsername(username);
-        if (!user || !(await comparePasswords(password, user.passwordHash))) {
-          return done(null, false);
-        }
-        return done(null, user);
-      } catch (err) {
-        return done(err);
+passport.use(
+  new LocalStrategy(async (username, password, done) => {
+    try {
+      const user = await storage.getUserByUsername(username);
+      
+      // Ищем хеш в обоих возможных полях (passwordHash или password_hash)
+      const storedHash = user?.passwordHash || user?.password_hash;
+
+      if (!user || !storedHash) {
+        return done(null, false);
       }
-    }),
-  );
+
+      const isValid = await comparePasswords(password, storedHash);
+      
+      if (!isValid) {
+        return done(null, false);
+      }
+
+      return done(null, user);
+    } catch (err) {
+      return done(err);
+    }
+  }),
+);
 
   passport.serializeUser((user: any, done) => done(null, user.id));
   passport.deserializeUser(async (id: number, done) => {
