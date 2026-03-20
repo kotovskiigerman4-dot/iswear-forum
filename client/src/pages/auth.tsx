@@ -26,7 +26,8 @@ export default function Auth() {
     }
   };
 
-  const skullUrl = "https://media.discordapp.net/attachments/1293910911240634390/1477790740582105098/favicon.png?ex=69a60b60&is=69a4b9e0&hm=5dd412db36f37b9e2fa7023f90820a09787af31955f897e492d6ee6cbe9103c2&=&format=webp&quality=lossless&width=20&height=20";
+  // ПОЧИНЕНО: Теперь берем логотип из твоего проекта, а не из Discord
+  const skullUrl = "/favicon.png";
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-black">
