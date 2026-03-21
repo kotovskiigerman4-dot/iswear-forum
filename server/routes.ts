@@ -305,7 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(comment);
   });
 
-  // --- GLOBAL SHOUTBOX API ---
+// --- GLOBAL SHOUTBOX API ---
   // Получение последних сообщений чата
   app.get("/api/chat", async (_req, res) => {
     try {
@@ -317,7 +317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Отправка нового сообщения
+  // Отправка нового сообщения + Система уведомлений
   app.post("/api/chat", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
@@ -325,16 +325,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!content || content.trim().length === 0) {
         return res.status(400).json({ message: "EMPTY_CONTENT" });
       }
+
+      // 1. Создаем само сообщение
       const message = await storage.createChatMessage({
         content,
         authorId: req.user.id
       });
+
+      // 2. Логика упоминаний (Пинги) — НИЧЕГО НЕ ЛОМАЕТ, ТОЛЬКО ДОБАВЛЯЕТ
+      const mentions = content.match(/@(\w+)/g);
+      if (mentions) {
+        const uniqueUsernames = [...new Set(mentions.map(m => m.substring(1)))];
+        for (const username of uniqueUsernames) {
+          const mentionedUser = await storage.getUserByUsername(username);
+          // Пингуем всех, кроме самого себя
+          if (mentionedUser && mentionedUser.id !== req.user.id) {
+            await storage.createNotification({
+              userId: mentionedUser.id,
+              fromUserId: req.user.id,
+              threadId: 0, // 0 означает, что это сообщение из чата, а не из конкретного треда
+              postId: message.id,
+              type: "mention"
+            });
+          }
+        }
+      }
+
       res.status(201).json(message);
     } catch (e) {
       res.status(400).json({ message: "SEND_FAILED" });
     }
   });
-
+  
   // --- ACTIVITY FEED API ---
   // Сборный роут для вкладки TRANSMISSIONS (Темы + Посты)
   app.get("/api/users/:id/activity", async (req, res) => {
