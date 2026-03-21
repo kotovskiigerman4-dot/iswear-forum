@@ -96,7 +96,8 @@ export const chatMessages = pgTable("chat_messages", {
 export const usersRelations = relations(users, ({ many }) => ({
   threads: many(threads),
   posts: many(posts),
-  profileComments: many(profileComments), 
+  profileComments: many(profileComments),
+  chatMessages: many(chatMessages), // <-- ДОБАВЬ ЭТУ СТРОКУ
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
