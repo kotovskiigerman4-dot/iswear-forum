@@ -82,6 +82,14 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// === ТАБЛИЦА ОБЩЕГО ЧАТА ===
+export const chatMessages = pgTable("chat_messages", {
+  id: serial("id").primaryKey(),
+  content: text("content").notNull(),
+  authorId: integer("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // === RELATIONS ===
 
 // ОБЪЕДИНЕННЫЕ СВЯЗИ ЮЗЕРА (БЕЗ ДУБЛИКАТОВ)
@@ -122,6 +130,14 @@ export const postsRelations = relations(posts, ({ one }) => ({
 export const profileCommentsRelations = relations(profileComments, ({ one }) => ({
   author: one(users, {
     fields: [profileComments.authorId],
+    references: [users.id],
+  }),
+}));
+
+// Связи для чата
+export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
+  author: one(users, {
+    fields: [chatMessages.authorId],
     references: [users.id],
   }),
 }));
