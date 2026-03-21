@@ -5,10 +5,11 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button, Input, Card } from "./ui/cyber-components";
-import { Terminal, Send, Eye, FileText, User as UserIcon, Shield } from "lucide-react";
+import { Terminal, Send, Eye, FileText, Shield, Activity } from "lucide-react";
 import { leet } from "@/lib/leet";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
+import { Avatar, AvatarImage, AvatarFallback } from "./ui/avatar";
 
 export function ChatBox() {
   const [text, setText] = useState("");
@@ -16,10 +17,11 @@ export function ChatBox() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const hideTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const { data: messages = [] } = useQuery({
     queryKey: ["/api/chat"],
-    refetchInterval: 3000, // Авто-обновление каждые 3 секунды
+    refetchInterval: 3000,
   });
 
   const sendMutation = useMutation({
@@ -34,6 +36,15 @@ export function ChatBox() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  const handleMouseEnter = (id: number) => {
+    if (hideTimeout.current) clearTimeout(hideTimeout.current);
+    setHoveredMsgId(id);
+  };
+
+  const handleMouseLeave = () => {
+    hideTimeout.current = setTimeout(() => setHoveredMsgId(null), 300);
+  };
+
   const getStyle = (role: string) => {
     switch (role) {
       case "ADMIN": return { label: "ADM", color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/50" };
@@ -45,82 +56,72 @@ export function ChatBox() {
 
   return (
     <Card className="h-[500px] flex flex-col border-primary/30 bg-black/60 backdrop-blur-md overflow-hidden shadow-[0_0_20px_rgba(0,255,159,0.1)]">
-      <div className="p-3 border-b border-primary/20 bg-primary/5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Terminal className="w-4 h-4 text-primary animate-pulse" />
-          <span className="text-[10px] font-display tracking-[0.2em] text-primary">{leet("GLOBAL_SHOUTBOX")}</span>
-        </div>
+      <div className="p-3 border-b border-primary/20 bg-primary/5 flex items-center gap-2">
+        <Terminal className="w-4 h-4 text-primary animate-pulse" />
+        <span className="text-[10px] font-display tracking-[0.2em]">{leet("GLOBAL_CHAT")}</span>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
         {messages.map((msg: any) => {
           const style = getStyle(msg.author.role);
           return (
-            <div key={msg.id} className="relative group border-l border-primary/10 pl-2 hover:border-primary/40 transition-colors">
+            <div key={msg.id} className="relative group">
               <div className="flex items-start gap-2">
-                <span className="text-[8px] text-muted-foreground opacity-30 mt-1 font-mono">
-                  {format(new Date(msg.createdAt), 'HH:mm')}
-                </span>
+                <span className="text-[8px] text-muted-foreground opacity-30 mt-1">{format(new Date(msg.createdAt), 'HH:mm')}</span>
                 
-                <div className="relative">
-                  <div 
-                    className="flex items-center gap-1 cursor-help"
-                    onMouseEnter={() => setHoveredMsgId(msg.id)}
-                    onMouseLeave={() => setHoveredMsgId(null)}
-                  >
-                    <span className={`text-[7px] px-1 border ${style.border} ${style.bg} ${style.color} font-bold`}>
-                      {style.label}
-                    </span>
-                    <span className={`font-mono text-[11px] font-bold ${style.color} hover:text-white transition-colors`}>
-                      {msg.author.username}:
-                    </span>
+                <div className="relative" 
+                     onMouseEnter={() => handleMouseEnter(msg.id)}
+                     onMouseLeave={handleMouseLeave}>
+                  
+                  <div className="flex items-center gap-1 cursor-pointer">
+                    <span className={`text-[7px] px-1 border ${style.border} ${style.bg} ${style.color} font-bold`}>{style.label}</span>
+                    <span className={`font-mono text-[11px] font-bold ${style.color} hover:text-white transition-colors`}>{msg.author.username}:</span>
                   </div>
 
                   <AnimatePresence>
                     {hoveredMsgId === msg.id && (
                       <motion.div 
-                        initial={{ opacity: 0, scale: 0.9, y: 5 }} 
+                        initial={{ opacity: 0, scale: 0.95, y: 5 }} 
                         animate={{ opacity: 1, scale: 1, y: 0 }} 
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        className="absolute bottom-full left-0 z-50 mb-2 w-52 bg-black border-2 border-primary shadow-[0_0_30px_rgba(0,255,159,0.4)] p-3"
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="absolute bottom-full left-0 z-[100] mb-2 w-56 bg-black border-2 border-primary shadow-[0_0_30px_rgba(0,255,159,0.4)] p-4 pointer-events-auto"
+                        onMouseEnter={() => handleMouseEnter(msg.id)}
+                        onMouseLeave={handleMouseLeave}
                       >
-                        <div className="flex items-center gap-3 mb-3 pb-2 border-b border-primary/20">
-                          <div className="w-10 h-10 border border-primary/30 bg-primary/5 flex items-center justify-center">
-                            <UserIcon className="w-5 h-5 text-primary" />
-                          </div>
+                        <div className="flex items-center gap-3 mb-3 pb-3 border-b border-primary/20">
+                          <Avatar className="h-12 w-12 border border-primary/30 rounded-none">
+                            <AvatarImage src={msg.author.avatarUrl || msg.author.avatar_url} />
+                            <AvatarFallback className="bg-primary/10 text-primary rounded-none">
+                                {msg.author.username[0].toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
                           <div className="leading-tight overflow-hidden">
                             <Link href={`/user/${msg.author.id}`}>
-                              <a className="text-primary font-bold text-sm hover:underline block truncate">{msg.author.username}</a>
+                              <a className="text-primary font-bold text-sm hover:underline truncate block">{msg.author.username}</a>
                             </Link>
-                            <p className={`text-[8px] mt-1 ${style.color} font-black uppercase tracking-widest`}>{msg.author.role}</p>
+                            <p className={`text-[9px] mt-1 ${style.color} font-black tracking-widest uppercase`}>{msg.author.role}</p>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-1.5 text-[9px] font-mono uppercase">
+                        <div className="space-y-2 text-[9px] font-mono uppercase text-primary/80">
                           <div className="flex justify-between border-b border-primary/5 pb-1">
-                            <span className="text-muted-foreground flex items-center gap-1"><Shield className="w-3 h-3"/> INIT_DATE:</span> 
-                            <span className="text-primary">{format(new Date(msg.author.createdAt), 'dd.MM.yy')}</span>
+                            <span className="text-muted-foreground flex items-center gap-1"><Shield className="w-3 h-3"/> JOINED:</span> 
+                            <span>{format(new Date(msg.author.createdAt), 'dd.MM.yy')}</span>
                           </div>
                           <div className="flex justify-between border-b border-primary/5 pb-1">
                             <span className="text-muted-foreground flex items-center gap-1"><FileText className="w-3 h-3"/> DATA_THREADS:</span> 
-                            <span className="text-primary">{msg.author.threadCount || 0}</span>
+                            <span>{msg.author.threadCount || 0}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1"><Eye className="w-3 h-3"/> VISUAL_SCANS:</span> 
-                            <span className="text-primary">{msg.author.views || 0}</span>
+                            <span className="text-muted-foreground flex items-center gap-1"><Eye className="w-3 h-3"/> SCANS:</span> 
+                            <span>{msg.author.views || 0}</span>
                           </div>
-                        </div>
-                        
-                        <div className="mt-3 pt-1 border-t border-primary/10 text-[7px] text-center text-primary/40 animate-pulse font-bold uppercase">
-                          Establish Connection? (Click Username)
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
-                <span className="text-[11px] text-primary/90 break-words leading-relaxed font-mono">
-                  {msg.content}
-                </span>
+                <span className="text-[11px] text-primary/90 break-words font-mono leading-relaxed">{msg.content}</span>
               </div>
             </div>
           );
@@ -128,20 +129,8 @@ export function ChatBox() {
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); if(text.trim()) sendMutation.mutate(text); }} className="p-3 bg-black/80 border-t border-primary/20 flex gap-2">
-        <Input 
-          value={text} 
-          onChange={(e) => setText(e.target.value)} 
-          placeholder={user ? leet("TYPE_MESSAGE...") : "AUTH_REQUIRED_TO_SHOUT"} 
-          className="h-9 text-[11px] bg-black/60 border-primary/20 focus:border-primary/50 font-mono transition-all" 
-          disabled={!user} 
-        />
-        <Button 
-          size="sm" 
-          className="h-9 px-4 bg-primary/10 hover:bg-primary/20 border-primary/30" 
-          disabled={!user || !text.trim() || sendMutation.isPending}
-        >
-          <Send className="w-4 h-4" />
-        </Button>
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={leet("TYPE_MESSAGE...")} className="h-9 text-[11px] bg-black/40 font-mono" disabled={!user} />
+        <Button size="sm" className="h-9 px-4" disabled={!user || !text.trim()}><Send className="w-4 h-4" /></Button>
       </form>
     </Card>
   );
