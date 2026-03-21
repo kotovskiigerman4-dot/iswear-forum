@@ -2,11 +2,15 @@
 import { useCategories, useStats } from "@/hooks/use-api";
 import { Card, Badge } from "@/components/ui/cyber-components";
 import { Layout } from "@/components/layout";
-import { ChatBox } from "@/components/ChatBox"; // Внедряем компонент чата
+import { ChatBox } from "@/components/ChatBox";
 import { Link } from "wouter";
 import { leet } from "@/lib/leet";
-import { FolderGit2, MessagesSquare, Users, Activity } from "lucide-center";
-import { FolderGit2 as FolderIcon, MessagesSquare as MsgIcon, Users as UsersIcon, Activity as ActivityIcon } from "lucide-react";
+import { 
+  FolderGit2 as FolderIcon, 
+  MessagesSquare as MsgIcon, 
+  Users as UsersIcon, 
+  Activity as ActivityIcon 
+} from "lucide-react"; // Все иконки должны быть здесь
 import { format } from "date-fns";
 
 export default function Home() {
