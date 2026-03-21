@@ -259,6 +259,65 @@ export class DatabaseStorage implements IStorage {
     return post;
   }
 
+  // --- ОБЩИЙ ЧАТ (SHOUTBOX) ---
+  async getChatMessages(): Promise<any[]> {
+    const results = await db
+      .select({
+        id: chatMessages.id,
+        content: chatMessages.content,
+        createdAt: chatMessages.createdAt,
+        author: {
+          id: users.id,
+          username: users.username,
+          avatarUrl: users.avatarUrl,
+          role: users.role,
+          views: users.views,
+          createdAt: users.createdAt,
+        }
+      })
+      .from(chatMessages)
+      .leftJoin(users, eq(chatMessages.authorId, users.id))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(50);
+
+    // Добавляем threadCount для каждого автора сообщения
+    return await Promise.all(results.map(async (msg) => {
+      const [count] = await db
+        .select({ value: sql<number>`count(*)` })
+        .from(threads)
+        .where(eq(threads.authorId, msg.author.id));
+      
+      return {
+        ...msg,
+        author: {
+          ...msg.author,
+          threadCount: Number(count.value)
+        }
+      };
+    }));
+  }
+
+  async createChatMessage(data: { content: string, authorId: number }): Promise<any> {
+    const [message] = await db.insert(chatMessages).values(data).returning();
+    return message;
+  }
+
+  // --- АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЯ (Для вкладки Transmissions) ---
+  async getUserPosts(userId: number): Promise<any[]> {
+    return await db
+      .select({
+        id: posts.id,
+        content: posts.content,
+        createdAt: posts.createdAt,
+        threadId: posts.threadId,
+        threadTitle: threads.title // Подтягиваем заголовок темы, где оставлен ответ
+      })
+      .from(posts)
+      .leftJoin(threads, eq(posts.threadId, threads.id))
+      .where(eq(posts.authorId, userId))
+      .orderBy(desc(posts.createdAt));
+  }
+
   async deletePost(id: number): Promise<void> {
     await db.delete(posts).where(eq(posts.id, id));
   }
