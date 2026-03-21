@@ -305,6 +305,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(comment);
   });
 
+  // --- GLOBAL SHOUTBOX API ---
+  // Получение последних сообщений чата
+  app.get("/api/chat", async (_req, res) => {
+    try {
+      const messages = await storage.getChatMessages();
+      // Возвращаем в правильном порядке для отображения снизу вверх
+      res.json(messages.reverse()); 
+    } catch (e) {
+      res.status(500).json({ message: "CHAT_OFFLINE" });
+    }
+  });
+
+  // Отправка нового сообщения
+  app.post("/api/chat", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    try {
+      const { content } = req.body;
+      if (!content || content.trim().length === 0) {
+        return res.status(400).json({ message: "EMPTY_CONTENT" });
+      }
+      const message = await storage.createChatMessage({
+        content,
+        authorId: req.user.id
+      });
+      res.status(201).json(message);
+    } catch (e) {
+      res.status(400).json({ message: "SEND_FAILED" });
+    }
+  });
+
+  // --- ACTIVITY FEED API ---
+  // Сборный роут для вкладки TRANSMISSIONS (Темы + Посты)
+  app.get("/api/users/:id/activity", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [threads, posts] = await Promise.all([
+        storage.getUserThreads(id),
+        storage.getUserPosts(id)
+      ]);
+
+      // Объединяем и сортируем по дате (от новых к старым)
+      const activity = [
+        ...(threads || []).map(t => ({ ...t, type: 'thread' })),
+        ...(posts || []).map(p => ({ ...p, type: 'post' }))
+      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      res.json(activity);
+    } catch (e) {
+      res.status(500).json({ message: "ACTIVITY_ERROR" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
